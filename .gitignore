@@ -6,6 +6,7 @@ __pycache__/
 
 # Data, checkpoints, and rendered predictions are reproducible but too large for Git.
 datasets/
+demo_alfoil/
 runs/
 *.pt
 prediction*.jpg

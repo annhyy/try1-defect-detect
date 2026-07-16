@@ -24,10 +24,9 @@ def load_data_yaml(path: str | Path) -> Dict:
 class YoloDefectDataset(Dataset):
     """Read a standard YOLO detection split selected by ``data.yaml``.
 
-    ``demo_alfoil/data.yaml`` selects the bundled synthetic smoke-test data;
-    ``datasets/apspc_yolo/data.yaml`` selects the locally converted APSPC data.
-    Both use identical image/label directory conventions, so no model code
-    changes are required when switching from the demo to real data.
+    ``datasets/apspc_yolo/data.yaml`` selects the locally converted APSPC
+    data. Future aluminum-foil datasets should use the same image/label
+    directory conventions, so no model code changes are required.
     """
     def __init__(self, cfg: Dict, split: str, image_size: int = 640) -> None:
         self.image_size = image_size
