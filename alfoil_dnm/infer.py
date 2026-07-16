@@ -46,7 +46,9 @@ def main():
     args = parser.parse_args()
     ckpt = torch.load(args.weights, map_location="cpu", weights_only=False)
     names = load_data_yaml(args.data)["names"]
-    model = DendriticDetector(len(names), ckpt["width"], ckpt["branches"]); model.load_state_dict(ckpt["model"]); model.eval()
+    model = DendriticDetector(len(names), ckpt["width"], ckpt["branches"], ckpt.get("branch_features", 4))
+    model.load_state_dict(ckpt["model"])
+    model.eval()
     original = Image.open(args.source).convert("RGB")
     w, h = original.size
     size = ckpt["img_size"]

@@ -8,6 +8,7 @@ __pycache__/
 datasets/
 demo_alfoil/
 runs/
+comparisons/*/runs/
 *.pt
 prediction*.jpg
 

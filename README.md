@@ -19,7 +19,7 @@ D:\Anaconda_envs\envs\pytorch\python.exe -m pip install -r .\alfoil_dnm\requirem
 D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\prepare_apspc.py
 
 # 训练轻量树突检测器
-D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\train.py --data .\datasets\apspc_yolo\data.yaml --epochs 120 --img-size 640 --batch-size 8 --branches 4 --out .\runs\apspc_dnm
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\train.py --data .\datasets\apspc_yolo\data.yaml --epochs 120 --img-size 640 --batch-size 8 --branches 4 --branch-features 4 --out .\runs\apspc_dnm
 
 # 推理
 # 将 --source 替换为待检测图片；下面以本地 APSPC 原始图片为例
@@ -36,6 +36,8 @@ runs/             训练权重和预测结果（已忽略，不上传 Git）
 ```
 
 详细的数据来源、类别映射、标注统计与实验规范见 [APSPC 数据说明](documents/apspc_dataset.md)。
+
+树突模型、YOLO11 和 YOLO26 的统一对比设置、评价指标和命令见[对比实验协议](documents/comparison_protocol.md)。
 
 ## Git 约定
 

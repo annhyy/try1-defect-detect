@@ -37,7 +37,7 @@ names: [hole, scratch, pit, stain, insect]
 
 ```powershell
 # APSPC：先在仓库根目录执行 prepare_apspc.py，再开始训练
-python .\alfoil_dnm\train.py --data .\datasets\apspc_yolo\data.yaml --epochs 120 --img-size 640 --batch-size 8 --branches 4 --out .\runs\apspc_dnm
+python .\alfoil_dnm\train.py --data .\datasets\apspc_yolo\data.yaml --epochs 120 --img-size 640 --batch-size 8 --branches 4 --branch-features 4 --out .\runs\apspc_dnm
 
 # source 必须替换为实际待检测图片；此处使用 APSPC 原图作示例
 python .\alfoil_dnm\infer.py --weights .\runs\apspc_dnm\best.pt --source .\datasets\APSPC1\img0.jpg --data .\datasets\apspc_yolo\data.yaml --out .\runs\apspc_dnm\prediction_img0.jpg
