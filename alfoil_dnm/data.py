@@ -11,6 +11,7 @@ from torch.utils.data import Dataset
 
 
 def load_data_yaml(path: str | Path) -> Dict:
+    """读取 YOLO 数据配置，并将 ``path`` 统一解析为绝对路径。"""
     path = Path(path)
     cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
     root = Path(cfg.get("path", path.parent))
@@ -22,11 +23,12 @@ def load_data_yaml(path: str | Path) -> Dict:
 
 
 class YoloDefectDataset(Dataset):
-    """Read a standard YOLO detection split selected by ``data.yaml``.
+    """读取标准 YOLO 目标检测数据集的一个划分。
 
-    ``datasets/apspc_yolo/data.yaml`` selects the locally converted APSPC
-    data. Future aluminum-foil datasets should use the same image/label
-    directory conventions, so no model code changes are required.
+    ``data.yaml`` 中的 ``train``、``val``、``test`` 必须指向图像目录，
+    例如 ``images/train``。标签目录按 YOLO 约定固定为同级根目录下的
+    ``labels/train``。目前 APSPC 转换数据使用该布局；后续铝箔数据保持
+    同一布局即可复用训练代码。
     """
     def __init__(self, cfg: Dict, split: str, image_size: int = 640) -> None:
         self.image_size = image_size
@@ -43,8 +45,8 @@ class YoloDefectDataset(Dataset):
         path = self.images[index]
         image = Image.open(path).convert("RGB").resize((self.image_size, self.image_size))
         image_tensor = torch.from_numpy(np.asarray(image, dtype=np.float32).transpose(2, 0, 1) / 255.0)
-        # Each image has a same-stem YOLO TXT label. Empty labels are valid
-        # negative samples and remain represented as a [0, 5] tensor.
+        # YOLO 标签与图片同名但扩展名为 .txt。空标签表示正常/负样本，
+        # 仍返回形状为 [0, 5] 的张量，保证批处理接口一致。
         label_path = self.label_dir / f"{path.stem}.txt"
         rows: List[List[float]] = []
         if label_path.exists():

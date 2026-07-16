@@ -22,7 +22,8 @@ D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\prepare_apspc.py
 D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\train.py --data .\datasets\apspc_yolo\data.yaml --epochs 120 --img-size 640 --batch-size 8 --branches 4 --out .\runs\apspc_dnm
 
 # 推理
-D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\infer.py --weights .\runs\apspc_dnm\best.pt --source sample.jpg --data .\datasets\apspc_yolo\data.yaml --out prediction.jpg
+# 将 --source 替换为待检测图片；下面以本地 APSPC 原始图片为例
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\infer.py --weights .\runs\apspc_dnm\best.pt --source .\datasets\APSPC1\img0.jpg --data .\datasets\apspc_yolo\data.yaml --out .\runs\apspc_dnm\prediction_img0.jpg
 ```
 
 ## 项目结构

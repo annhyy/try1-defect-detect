@@ -1,1 +1,1 @@
-"""Lightweight dendritic-neuron detector for aluminum-foil defects."""
+"""面向铝材与铝箔表面缺陷的轻量树突神经元检测器。"""

@@ -6,18 +6,19 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 
-# Support both `python -m alfoil_dnm.train` and directly running this file in an IDE.
+# 同时兼容 ``python -m alfoil_dnm.train`` 与 IDE 直接运行 train.py。
 try:
     from .data import YoloDefectDataset, collate, load_data_yaml
     from .loss import detector_loss
     from .model import DendriticDetector
-except ImportError:  # __package__ is empty when PyCharm/VS Code runs train.py directly
+except ImportError:  # IDE 直接运行时 __package__ 为空，改用当前目录导入。
     from data import YoloDefectDataset, collate, load_data_yaml
     from loss import detector_loss
     from model import DendriticDetector
 
 
 def run_epoch(model, loader, optimizer, num_classes, device):
+    """运行一个训练或验证 epoch；``optimizer=None`` 时只做验证。"""
     model.train(optimizer is not None)
     total = 0.0
     for images, targets, _ in loader:
@@ -28,6 +29,7 @@ def run_epoch(model, loader, optimizer, num_classes, device):
         if optimizer is not None:
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
+            # 乘性树突分支可能放大局部梯度，裁剪可提升训练稳定性。
             torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
             optimizer.step()
         total += loss.item() * images.shape[0]
@@ -48,7 +50,7 @@ def main():
     args = parser.parse_args()
     torch.manual_seed(42)
     device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
-    # The YAML path is the single switch between the bundled demo and APSPC.
+    # ``--data`` 是数据源唯一入口；正式 APSPC 使用 datasets/apspc_yolo/data.yaml。
     cfg = load_data_yaml(args.data)
     train_set, val_set = YoloDefectDataset(cfg, "train", args.img_size), YoloDefectDataset(cfg, "val", args.img_size)
     train_loader = DataLoader(train_set, args.batch_size, shuffle=True, num_workers=args.workers, pin_memory=device.type == "cuda", collate_fn=collate)

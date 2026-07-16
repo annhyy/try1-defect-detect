@@ -1,4 +1,4 @@
-"""Stable dendritic detector head inspired by the supplied DNM base models."""
+"""参考给定 DNM 基础模型实现的数值稳定树突检测头。"""
 from __future__ import annotations
 
 import torch
@@ -15,10 +15,10 @@ class ConvBNAct(nn.Sequential):
 
 
 class DendriticFeature(nn.Module):
-    """Synapse gate -> grouped dendrite -> membrane sum.
+    """突触门控 -> 分组树突 -> 膜层聚合。
 
-    The geometric mean is evaluated in log space. It is the stable, local
-    equivalent of the direct multiplicative dendritic operation in DNM_Linear2.
+    分支内使用对数域几何平均而非直接连乘，等价于 DNM_Linear2 的局部
+    乘性树突计算，同时避免高维特征连乘导致的数值下溢。
     """
     def __init__(self, channels: int, branches: int = 4, eps: float = 1e-6) -> None:
         super().__init__()
@@ -42,7 +42,7 @@ class DendriticFeature(nn.Module):
 
 
 class TinyBackbone(nn.Module):
-    """Stride-8 backbone intentionally small enough for GTX 1060 / CPU."""
+    """步长为 8 的轻量卷积骨干，适合 GTX 1060 或 CPU 起步。"""
     def __init__(self, width: int = 32) -> None:
         super().__init__()
         self.layers = nn.Sequential(
@@ -57,7 +57,7 @@ class TinyBackbone(nn.Module):
 
 
 class DendriticDetector(nn.Module):
-    """Anchor-free single-scale detector; output [B, 5 + num_classes, H/8, W/8]."""
+    """单尺度无锚框检测器，输出形状为 [B, 5 + 类别数, H/8, W/8]。"""
     stride = 8
 
     def __init__(self, num_classes: int, width: int = 32, branches: int = 4) -> None:
@@ -73,5 +73,5 @@ class DendriticDetector(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         features = self.stem(self.dendrite(self.backbone(x)))
-        # box: sigmoid [center offset in a cell, normalized width, normalized height].
+        # 边框四项经 Sigmoid 后依次为：网格内中心偏移 x/y、归一化宽/高。
         return torch.cat((self.objectness(features), self.box(features), self.classes(features)), dim=1)

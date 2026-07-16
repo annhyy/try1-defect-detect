@@ -1,5 +1,7 @@
 # 铝箔表面缺陷：轻量树突检测器
 
+> 项目的正式入口和 APSPC 实际路径见仓库根目录 `README.md`；本文件仅说明自定义铝箔数据应满足的 YOLO 目录与标签格式。
+
 本实现面向 `缺陷位置 + 缺陷类别` 的检测任务，而不是整图分类。它以轻量卷积提取局部感受野特征，再用树突头完成分组的非线性交互：突触门控 -> 分支几何平均（log 域）-> 膜层聚合 -> 胞体输出。分支只处理通道组，不对整幅图像或全部特征直接连乘，因此避免传统 DNM 在高维输入上的数值下溢。
 
 ## 推荐数据集与使用顺序
@@ -34,8 +36,11 @@ names: [hole, scratch, pit, stain, insect]
 安装 PyTorch（按 CUDA 版本从 PyTorch 官网选择）以及 `pyyaml pillow numpy` 后：
 
 ```powershell
-python -m alfoil_dnm.train --data D:/datasets/alfoil/data.yaml --epochs 120 --img-size 640 --batch-size 8 --branches 4
-python -m alfoil_dnm.infer --weights runs/alfoil_dnm/best.pt --source sample.jpg --data D:/datasets/alfoil/data.yaml
+# APSPC：先在仓库根目录执行 prepare_apspc.py，再开始训练
+python .\alfoil_dnm\train.py --data .\datasets\apspc_yolo\data.yaml --epochs 120 --img-size 640 --batch-size 8 --branches 4 --out .\runs\apspc_dnm
+
+# source 必须替换为实际待检测图片；此处使用 APSPC 原图作示例
+python .\alfoil_dnm\infer.py --weights .\runs\apspc_dnm\best.pt --source .\datasets\APSPC1\img0.jpg --data .\datasets\apspc_yolo\data.yaml --out .\runs\apspc_dnm\prediction_img0.jpg
 ```
 
 GTX 1060（6 GB）建议从 `640, batch=4~8, branches=4, width=32` 起步；CPU 用 `512, batch=2`。若缺陷宽度小于原图 1/16，请先对长条产线图做重叠切片（例如 640x640、20% 重叠），再合并检测结果，避免下采样抹掉小缺陷。

@@ -13,7 +13,7 @@ def build_targets(targets: list[Tensor], grid_h: int, grid_w: int, classes: int,
     for batch_index, labels in enumerate(targets):
         for category, cx, cy, width, height in labels.tolist():
             gx, gy = min(int(cx * grid_w), grid_w - 1), min(int(cy * grid_h), grid_h - 1)
-            # one center cell per object: adequate for sparse foil defects.
+            # 每个目标只分配给其中心所在网格；该策略适合缺陷较稀疏的产线图像。
             if positive[batch_index, 0, gy, gx] and obj[batch_index, 0, gy, gx] > width * height:
                 continue
             positive[batch_index, 0, gy, gx] = True
