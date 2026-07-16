@@ -22,6 +22,13 @@ def load_data_yaml(path: str | Path) -> Dict:
 
 
 class YoloDefectDataset(Dataset):
+    """Read a standard YOLO detection split selected by ``data.yaml``.
+
+    ``demo_alfoil/data.yaml`` selects the bundled synthetic smoke-test data;
+    ``datasets/apspc_yolo/data.yaml`` selects the locally converted APSPC data.
+    Both use identical image/label directory conventions, so no model code
+    changes are required when switching from the demo to real data.
+    """
     def __init__(self, cfg: Dict, split: str, image_size: int = 640) -> None:
         self.image_size = image_size
         image_dir = cfg["root"] / cfg[split]
@@ -37,6 +44,8 @@ class YoloDefectDataset(Dataset):
         path = self.images[index]
         image = Image.open(path).convert("RGB").resize((self.image_size, self.image_size))
         image_tensor = torch.from_numpy(np.asarray(image, dtype=np.float32).transpose(2, 0, 1) / 255.0)
+        # Each image has a same-stem YOLO TXT label. Empty labels are valid
+        # negative samples and remain represented as a [0, 5] tensor.
         label_path = self.label_dir / f"{path.stem}.txt"
         rows: List[List[float]] = []
         if label_path.exists():

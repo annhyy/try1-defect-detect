@@ -1,0 +1,9 @@
+path: D:\AAstudy\try1\demo_alfoil
+train: images/train
+val: images/val
+names:
+- hole
+- scratch
+- pit
+- stain
+- insect

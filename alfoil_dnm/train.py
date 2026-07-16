@@ -48,6 +48,7 @@ def main():
     args = parser.parse_args()
     torch.manual_seed(42)
     device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    # The YAML path is the single switch between the bundled demo and APSPC.
     cfg = load_data_yaml(args.data)
     train_set, val_set = YoloDefectDataset(cfg, "train", args.img_size), YoloDefectDataset(cfg, "val", args.img_size)
     train_loader = DataLoader(train_set, args.batch_size, shuffle=True, num_workers=args.workers, pin_memory=device.type == "cuda", collate_fn=collate)
