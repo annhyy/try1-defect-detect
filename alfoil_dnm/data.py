@@ -43,7 +43,10 @@ class YoloDefectDataset(Dataset):
 
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor, str]:
         path = self.images[index]
-        image = Image.open(path).convert("RGB").resize((self.image_size, self.image_size))
+        image = Image.open(path).convert("RGB")
+        # letterbox 缓存图已经是训练尺寸，无需再次缩放；原始数据仍保持旧的兼容行为。
+        if image.size != (self.image_size, self.image_size):
+            image = image.resize((self.image_size, self.image_size))
         image_tensor = torch.from_numpy(np.asarray(image, dtype=np.float32).transpose(2, 0, 1) / 255.0)
         # YOLO 标签与图片同名但扩展名为 .txt。空标签表示正常/负样本，
         # 仍返回形状为 [0, 5] 的张量，保证批处理接口一致。

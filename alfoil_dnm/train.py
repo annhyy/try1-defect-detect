@@ -68,8 +68,16 @@ def main():
     # ``--data`` 是数据源唯一入口；正式 APSPC 使用 datasets/apspc_yolo/data.yaml。
     cfg = load_data_yaml(args.data)
     train_set, val_set = YoloDefectDataset(cfg, "train", args.img_size), YoloDefectDataset(cfg, "val", args.img_size)
-    train_loader = DataLoader(train_set, args.batch_size, shuffle=True, num_workers=args.workers, pin_memory=device.type == "cuda", collate_fn=collate)
-    val_loader = DataLoader(val_set, args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=device.type == "cuda", collate_fn=collate)
+    # Windows 创建数据加载子进程的开销较大。工作进程跨 epoch 常驻，避免每轮都重新启动它们；
+    # ``num_workers=0`` 时 PyTorch 不允许设置 persistent_workers。
+    loader_options = {
+        "num_workers": args.workers,
+        "pin_memory": device.type == "cuda",
+        "collate_fn": collate,
+        "persistent_workers": args.workers > 0,
+    }
+    train_loader = DataLoader(train_set, args.batch_size, shuffle=True, **loader_options)
+    val_loader = DataLoader(val_set, args.batch_size, shuffle=False, **loader_options)
     model = DendriticDetector(len(cfg["names"]), args.width, args.branches, args.branch_features).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=2e-3, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs)

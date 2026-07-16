@@ -18,12 +18,15 @@ D:\Anaconda_envs\envs\pytorch\python.exe -m pip install -r .\alfoil_dnm\requirem
 # XML (Pascal VOC) -> YOLO 标签；原始数据不会被修改
 D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\prepare_apspc.py
 
+# 等比例缩放为 640×640 letterbox 缓存（推荐，只需执行一次）
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\cache_letterbox.py
+
 # 训练轻量树突检测器
-D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\train.py --data .\datasets\apspc_yolo\data.yaml --epochs 120 --img-size 640 --batch-size 8 --branches 4 --branch-features 4 --out .\runs\apspc_dnm
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\train.py --data .\datasets\apspc_yolo_letterbox640\data.yaml --epochs 120 --img-size 640 --batch-size 8 --branches 4 --branch-features 4 --out .\runs\apspc_dnm
 
 # 推理
 # 将 --source 替换为待检测图片；下面以本地 APSPC 原始图片为例
-D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\infer.py --weights .\runs\apspc_dnm\best.pt --source .\datasets\APSPC1\img0.jpg --data .\datasets\apspc_yolo\data.yaml --out .\runs\apspc_dnm\prediction_img0.jpg
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\infer.py --weights .\runs\apspc_dnm\best.pt --source .\datasets\APSPC1\img0.jpg --data .\datasets\apspc_yolo_letterbox640\data.yaml --out .\runs\apspc_dnm\prediction_img0.jpg
 ```
 
 ## 项目结构
