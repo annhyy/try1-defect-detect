@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import time
 from pathlib import Path
 
 import torch
@@ -63,22 +65,49 @@ def main():
     model = DendriticDetector(len(cfg["names"]), args.width, args.branches, args.branch_features).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=2e-3, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs)
-    out = Path(args.out); out.mkdir(parents=True, exist_ok=True)
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    metrics_path = out / "metrics.csv"
+    if not metrics_path.exists():
+        with metrics_path.open("w", newline="", encoding="utf-8") as file:
+            csv.writer(file).writerow((
+                "epoch", "train_total", "train_obj", "train_box", "train_cls",
+                "val_total", "val_obj", "val_box", "val_cls", "map50",
+                "epoch_seconds", "elapsed_seconds",
+            ))
+    parameter_count = sum(parameter.numel() for parameter in model.parameters())
+    device_name = torch.cuda.get_device_name(device) if device.type == "cuda" else "CPU"
+    print(f"设备：{device_name}；模型参数量：{parameter_count:,}；输出目录：{out.resolve()}")
     best_loss = float("inf")
+    training_start = time.perf_counter()
     for epoch in range(1, args.epochs + 1):
+        # CUDA 默认异步执行；同步后计时才能包含本轮实际 GPU 计算时间。
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
+        epoch_start = time.perf_counter()
         train_metrics = run_epoch(model, train_loader, optimizer, len(cfg["names"]), device)
         val_metrics = run_epoch(model, val_loader, None, len(cfg["names"]), device)
         scheduler.step()
         map50 = None
         if epoch % args.map_interval == 0 or epoch == args.epochs:
             map50 = evaluate_map50(model, val_loader, len(cfg["names"]), device)
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
+        epoch_seconds = time.perf_counter() - epoch_start
+        elapsed_seconds = time.perf_counter() - training_start
         map_text = "--" if map50 is None else f"{map50:.4f}"
         print(
             f"epoch {epoch:03d}/{args.epochs} "
             f"train(total={train_metrics['loss']:.4f}, obj={train_metrics['obj']:.4f}, box={train_metrics['box']:.4f}, cls={train_metrics['cls']:.4f}) "
             f"val(total={val_metrics['loss']:.4f}, obj={val_metrics['obj']:.4f}, box={val_metrics['box']:.4f}, cls={val_metrics['cls']:.4f}) "
-            f"mAP50={map_text}"
+            f"mAP50={map_text} time={epoch_seconds:.1f}s elapsed={elapsed_seconds / 60:.1f}min"
         )
+        with metrics_path.open("a", newline="", encoding="utf-8") as file:
+            csv.writer(file).writerow((
+                epoch, train_metrics["loss"], train_metrics["obj"], train_metrics["box"], train_metrics["cls"],
+                val_metrics["loss"], val_metrics["obj"], val_metrics["box"], val_metrics["cls"],
+                "" if map50 is None else map50, epoch_seconds, elapsed_seconds,
+            ))
         checkpoint = {"model": model.state_dict(), "names": cfg["names"], "width": args.width, "branches": args.branches, "branch_features": args.branch_features, "img_size": args.img_size, "map50": map50}
         torch.save(checkpoint, out / "last.pt")
         if val_metrics["loss"] < best_loss:

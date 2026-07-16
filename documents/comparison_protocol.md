@@ -31,4 +31,6 @@ train(total=..., obj=..., box=..., cls=...) val(total=..., obj=..., box=..., cls
 - `cls`：缺陷类别损失。
 - `mAP50`：预测框与真值框 IoU 阈值为 0.5 时的平均精度均值；按 `--map-interval` 计算，未计算时显示 `--`。
 
+每行末尾的 `time` 是本轮训练、验证和可能的 mAP 评估合计耗时，`elapsed` 是从训练开始累计的总耗时。相同信息会写到树突实验输出目录中的 `metrics.csv`；YOLO 实验则使用 Ultralytics 自动生成的 `results.csv` 与 `test_metrics.json`。
+
 此前截图中的 `train=...` 与 `val=...` 只有总训练损失和验证损失，不能解释为准确率或 mAP。
