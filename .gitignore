@@ -1,0 +1,16 @@
+# Python and IDE artifacts
+__pycache__/
+*.py[cod]
+.idea/
+.vscode/
+
+# Data, checkpoints, and rendered predictions are reproducible but too large for Git.
+datasets/
+demo_alfoil/
+runs/
+*.pt
+prediction*.jpg
+
+# Local environment files
+.env
+.venv/
