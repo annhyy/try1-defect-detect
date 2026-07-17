@@ -34,3 +34,15 @@ train(total=..., obj=..., box=..., cls=...) val(total=..., obj=..., box=..., cls
 每行末尾的 `time` 是本轮训练、验证和可能的 mAP 评估合计耗时，`elapsed` 是从训练开始累计的总耗时。相同信息会写到树突实验输出目录中的 `metrics.csv`；YOLO 实验则使用 Ultralytics 自动生成的 `results.csv` 与 `test_metrics.json`。
 
 此前截图中的 `train=...` 与 `val=...` 只有总训练损失和验证损失，不能解释为准确率或 mAP。
+
+## 绘图对比
+
+树突模型的逐轮日志文件为 `runs/.../metrics.csv`；YOLO11/YOLO26 的逐轮日志文件为各自 `runs/apspc/results.csv`。三者的 mAP@0.5 可以直接比较。不同模型的 loss 由不同公式、不同损失权重构成，不能比较绝对数值；绘图工具仅将各自训练 loss 按首轮值归一化，用于展示收敛趋势。
+
+在三组训练完成后执行：
+
+```powershell
+D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\plot_metrics.py
+```
+
+图像输出到 `comparisons/figures/metrics_comparison.png`。YOLO 同时提供标准 mAP@0.5:0.95；当前树突评估器只实现 mAP@0.5，因此最后一张子图不会伪造树突模型的 mAP@0.5:0.95。

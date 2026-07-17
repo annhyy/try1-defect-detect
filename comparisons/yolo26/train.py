@@ -11,7 +11,8 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="YOLO26 与树突检测器的公平对比实验")
-    parser.add_argument("--data", default=str(ROOT / "datasets" / "apspc_yolo" / "data.yaml"))
+    # 与树突模型使用同一份等比例 letterbox 缓存数据，避免预处理差异影响对照结论。
+    parser.add_argument("--data", default=str(ROOT / "datasets" / "apspc_yolo_letterbox640" / "data.yaml"))
     parser.add_argument("--epochs", type=int, default=120)
     parser.add_argument("--img-size", type=int, default=640)
     parser.add_argument("--batch-size", type=int, default=8)

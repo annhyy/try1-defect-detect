@@ -10,4 +10,4 @@ python .\comparisons\yolo11\train.py --epochs 120 --img-size 640 --batch-size 8
 python .\comparisons\yolo11\train.py --pretrained --epochs 120 --img-size 640 --batch-size 8
 ```
 
-结果写入 `comparisons/yolo11/runs/apspc/`：Ultralytics 的 `results.csv` 保存逐 epoch 损失和检测指标，`test_metrics.json` 保存测试集最终指标。
+默认加载 `datasets/apspc_yolo_letterbox640/data.yaml`，与树突模型使用相同的等比例缓存图像、标签和划分。结果写入 `comparisons/yolo11/runs/apspc/`：Ultralytics 的 `results.csv` 保存逐 epoch 损失和检测指标，`test_metrics.json` 保存测试集最终指标。完成三组训练后，在仓库根目录运行 `python .\comparisons\plot_metrics.py` 生成统一指标图。

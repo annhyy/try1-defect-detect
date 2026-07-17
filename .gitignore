@@ -9,6 +9,7 @@ datasets/
 demo_alfoil/
 runs/
 comparisons/*/runs/
+comparisons/figures/
 *.pt
 prediction*.jpg
 
