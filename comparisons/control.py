@@ -64,7 +64,11 @@ def write_protocol(output: Path, protocol: dict[str, Any]) -> None:
     (output / "experiment_config.json").write_text(json.dumps(protocol, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-def standardize_yolo_metrics(results_csv: Path, output_csv: Path) -> None:
+def standardize_yolo_metrics(
+    results_csv: Path,
+    output_csv: Path,
+    gpu_memory_mb_by_epoch: dict[int, float] | None = None,
+) -> None:
     """将 Ultralytics 的 ``results.csv`` 转换为三模型共用指标列。"""
     with results_csv.open("r", newline="", encoding="utf-8-sig") as file:
         rows = [{key.strip(): value.strip() for key, value in row.items() if key} for row in csv.DictReader(file)]
@@ -88,6 +92,6 @@ def standardize_yolo_metrics(results_csv: Path, output_csv: Path) -> None:
                 _number(row, "metrics/mAP50-95(B)", "metrics/mAP50-95"),
                 epoch_seconds,
                 elapsed,
-                "",  # Ultralytics 只在终端打印 GPU_mem，不在 results.csv 中逐轮保存。
+                (gpu_memory_mb_by_epoch or {}).get(epoch, ""),
                 _number(row, "lr/pg0"),
             ))

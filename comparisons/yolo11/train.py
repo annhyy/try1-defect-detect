@@ -6,6 +6,8 @@ import json
 import sys
 from pathlib import Path
 
+import torch
+
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -33,6 +35,19 @@ def main() -> None:
     print(f"模型初始化：{model_source}；{'使用 COCO 预训练权重' if args.pretrained else '从零随机初始化'}")
     print("受控协议：增强=none；AdamW(lr=0.002, wd=0.0001)；余弦调度；AMP=False；名义批量=8")
     model = YOLO(model_source)
+    # 记录每轮训练和验证期间的峰值已分配显存；口径与树突训练器一致。
+    gpu_memory_mb_by_epoch: dict[int, float] = {}
+
+    def reset_peak_memory(trainer) -> None:
+        if trainer.device.type == "cuda":
+            torch.cuda.reset_peak_memory_stats(trainer.device)
+
+    def record_peak_memory(trainer) -> None:
+        if trainer.device.type == "cuda":
+            gpu_memory_mb_by_epoch[trainer.epoch + 1] = torch.cuda.max_memory_allocated(trainer.device) / 1024 ** 2
+
+    model.add_callback("on_train_epoch_start", reset_peak_memory)
+    model.add_callback("on_fit_epoch_end", record_peak_memory)
     controlled = controlled_yolo_options(args.epochs)
     model.train(
         data=args.data,
@@ -72,7 +87,7 @@ def main() -> None:
     )
     summary = {**protocol, "test": test_metrics.results_dict}
     (save_dir / "test_metrics.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
-    standardize_yolo_metrics(save_dir / "results.csv", save_dir / "comparison_metrics.csv")
+    standardize_yolo_metrics(save_dir / "results.csv", save_dir / "comparison_metrics.csv", gpu_memory_mb_by_epoch)
     print(json.dumps(summary, indent=2, ensure_ascii=False))
     print(f"统一逐轮指标：{save_dir / 'comparison_metrics.csv'}")
 
