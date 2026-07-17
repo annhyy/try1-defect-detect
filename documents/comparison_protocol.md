@@ -2,7 +2,7 @@
 
 ## 目的
 
-本文件规定三种模型的**严格可比较**训练方案：树突检测器、YOLO11n 和 YOLO26n。模型内部结构、检测头和损失函数本来就不同，因此不能比较 loss 的绝对值；论文的主比较指标应统一为 Precision、Recall、mAP50 和 mAP50-95。
+本文件规定两层实验：内部机制消融包含 DNM-V1、DNM-V2a、DNM-V2b 和参数匹配普通卷积，它们共用骨干、检测头与损失；外部基线为 YOLO11n 和 YOLO26n。不同检测体系不能比较 loss 的绝对值，论文主比较指标统一为 Precision、Recall、mAP50 和 mAP50-95。
 
 ## 共同控制变量
 
@@ -33,6 +33,15 @@
 # 树突检测器
 D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\train.py
 
+# DNM-V2a：论文参数补全、log 域精确乘积
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_v2a\train.py
+
+# DNM-V2b：仅将精确乘积换成几何平均
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_v2b\train.py
+
+# 参数量匹配的普通卷积消融
+D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\conv_control\train.py
+
 # YOLO11n，从 yolo11n.yaml 随机初始化
 D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo11\train.py
 
@@ -49,6 +58,9 @@ D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo26\train.py
 | 模型 | 目录 |
 |---|---|
 | 树突检测器 | `runs/controlled/dnm/` |
+| DNM-V2a | `runs/controlled/dnm_v2a/` |
+| DNM-V2b | `runs/controlled/dnm_v2b/` |
+| 普通卷积对照 | `runs/controlled/conv_control/` |
 | YOLO11n | `runs/controlled/yolo11n/` |
 | YOLO26n | `runs/controlled/yolo26n/` |
 
@@ -81,6 +93,8 @@ D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\plot_metrics.py
 APSPC 的训练图像约有 6,400 个 stride-8 网格位置，但平均每张图只有约 1.7 个缺陷框。旧版树突训练器的 objectness 正负样本权重过低，背景网格容易主导梯度，导致 objectness 和 mAP 长期偏低。
 
 当前训练器将 objectness 改为动态正负样本平衡的 focal BCE，并按 `mAP50-95` 而非验证 loss 保存 `best.pt`。这是检测任务的必要修正，因此旧版树突训练结果不能与新的受控 YOLO 实验直接对比，需按本协议重新训练。
+
+V2a 与 V2b 默认参数量均为 500,607；普通卷积对照为 500,486，差异约 0.024%。三者有意改变的是融合结构。V2a 使用与论文乘积等价的 `exp(sum(log(gate)))`，V2b 使用会改变函数尺度的 `exp(mean(log(gate)))`；二者胞体阈值按各自理论初始膜电位校准，避免仅因输出尺度不同造成初始偏置。公式和参数边界见 `documents/dnm_ablation_models.md`。
 
 ## 旧的非受控运行
 

@@ -1,4 +1,4 @@
-"""绘制三模型受控对照实验的可比检测指标。"""
+"""绘制树突消融模型、普通卷积和 YOLO 的可比检测指标。"""
 from __future__ import annotations
 
 import argparse
@@ -39,13 +39,23 @@ def plot_line(axis, items: list[dict], key: str, title: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="绘制 DNM、YOLO11、YOLO26 的受控检测指标对照图")
+    parser = argparse.ArgumentParser(description="绘制 DNM 消融、普通卷积和 YOLO 的受控检测指标对照图")
     parser.add_argument("--dnm", default=str(ROOT / "runs" / "controlled" / "dnm" / "comparison_metrics.csv"))
+    parser.add_argument("--dnm-v2a", default=str(ROOT / "runs" / "controlled" / "dnm_v2a" / "comparison_metrics.csv"))
+    parser.add_argument("--dnm-v2b", default=str(ROOT / "runs" / "controlled" / "dnm_v2b" / "comparison_metrics.csv"))
+    parser.add_argument("--conv-control", default=str(ROOT / "runs" / "controlled" / "conv_control" / "comparison_metrics.csv"))
     parser.add_argument("--yolo11", default=str(ROOT / "runs" / "controlled" / "yolo11n" / "comparison_metrics.csv"))
     parser.add_argument("--yolo26", default=str(ROOT / "runs" / "controlled" / "yolo26n" / "comparison_metrics.csv"))
     parser.add_argument("--out", default=str(ROOT / "runs" / "controlled" / "metrics_comparison.png"))
     args = parser.parse_args()
-    sources = ((Path(args.dnm), "Dendritic detector"), (Path(args.yolo11), "YOLO11n"), (Path(args.yolo26), "YOLO26n"))
+    sources = (
+        (Path(args.dnm), "DNM-V1"),
+        (Path(args.dnm_v2a), "DNM-V2a product"),
+        (Path(args.dnm_v2b), "DNM-V2b geometric mean"),
+        (Path(args.conv_control), "Conv control"),
+        (Path(args.yolo11), "YOLO11n"),
+        (Path(args.yolo26), "YOLO26n"),
+    )
     items = [series(path, name) for path, name in sources if path.exists()]
     for path, _ in sources:
         if not path.exists():

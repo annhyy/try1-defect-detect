@@ -21,12 +21,17 @@ D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\prepare_apspc.py
 # 等比例缩放为 640×640 letterbox 缓存（推荐，只需执行一次）
 D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\cache_letterbox.py
 
-# 受控对照：树突模型、YOLO11、YOLO26 均从零训练，输出统一写入 runs/controlled/
+# 机制消融：V1、论文乘积 V2a、几何平均 V2b、参数匹配普通卷积
 D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\train.py
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_v2a\train.py
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_v2b\train.py
+D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\conv_control\train.py
+
+# 外部基线：YOLO11、YOLO26，从零训练
 D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo11\train.py
 D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo26\train.py
 
-# 三组完成后，绘制 Precision、Recall、mAP50、mAP50-95 对照图
+# 已完成的模型会被自动加入 Precision、Recall、mAP50、mAP50-95 对照图
 D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\plot_metrics.py
 
 # 推理
@@ -38,6 +43,9 @@ D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\infer.py --weights .\runs\
 
 ```text
 alfoil_dnm/       模型、VOC 转换、训练和推理代码
+alfoil_dnm_v2a/   论文参数补全、log 域精确乘积入口
+alfoil_dnm_v2b/   几何平均乘性树突入口
+comparisons/      参数匹配普通卷积与 YOLO 外部基线
 documents/        数据来源、类别和实验记录
 datasets/         本地数据集（已忽略，不上传 Git）
 runs/             训练权重和预测结果（已忽略，不上传 Git）
@@ -46,6 +54,8 @@ runs/             训练权重和预测结果（已忽略，不上传 Git）
 详细的数据来源、类别映射、标注统计与实验规范见 [APSPC 数据说明](documents/apspc_dataset.md)。
 
 树突模型、YOLO11 和 YOLO26 的统一对比设置、评价指标和命令见[对比实验协议](documents/comparison_protocol.md)。
+
+V2a、V2b 与普通卷积的公式、参数匹配方式和消融边界见[DNM 消融模型说明](documents/dnm_ablation_models.md)。
 
 ## Git 约定
 

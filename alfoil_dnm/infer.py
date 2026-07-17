@@ -10,10 +10,10 @@ from PIL import Image, ImageDraw
 # 同时兼容 ``python -m alfoil_dnm.infer`` 与 IDE 直接运行 infer.py。
 try:
     from .data import load_data_yaml
-    from .model import DendriticDetector
+    from .model_variants import build_detector
 except ImportError:
     from data import load_data_yaml
-    from model import DendriticDetector
+    from model_variants import build_detector
 
 
 def nms(boxes, scores, threshold=0.45):
@@ -46,7 +46,8 @@ def main():
     args = parser.parse_args()
     ckpt = torch.load(args.weights, map_location="cpu", weights_only=False)
     names = load_data_yaml(args.data)["names"]
-    model = DendriticDetector(len(names), ckpt["width"], ckpt["branches"], ckpt.get("branch_features", 4))
+    variant = ckpt.get("variant", "v1")  # 旧权重没有该字段，按 V1 兼容加载。
+    model = build_detector(variant, len(names), ckpt["width"], ckpt["branches"], ckpt.get("branch_features", 4))
     model.load_state_dict(ckpt["model"])
     model.eval()
     original = Image.open(args.source).convert("RGB")
@@ -75,7 +76,7 @@ def main():
             draw.rectangle(box, outline="red", width=2)
             draw.text((box[0], max(0, box[1] - 14)), f"{names[category]} {score:.2f}", fill="red")
     original.save(args.out)
-    print(Path(args.out).resolve())
+    print(f"模型：{variant}；输出：{Path(args.out).resolve()}")
 
 
 if __name__ == "__main__":

@@ -17,12 +17,12 @@ try:  # 同时兼容 ``python -m alfoil_dnm.train`` 与 IDE 直接运行。
     from .data import YoloDefectDataset, collate, load_data_yaml
     from .loss import detector_loss
     from .metrics import evaluate_detection
-    from .model import DendriticDetector
+    from .model_variants import MODEL_VARIANTS, build_detector
 except ImportError:
     from data import YoloDefectDataset, collate, load_data_yaml
     from loss import detector_loss
     from metrics import evaluate_detection
-    from model import DendriticDetector
+    from model_variants import MODEL_VARIANTS, build_detector
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -97,21 +97,30 @@ def metric_row(metrics: dict | None) -> tuple[float | str, float | str, float | 
     return precision, recall, float(metrics["map50"]), float(metrics["map50_95"]), f1
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="树突检测器：受控 YOLO 对照训练")
-    parser.add_argument("--data", default=str(CONTROLLED_DATA), help="三模型共享的 YOLO data.yaml")
+def main(
+    default_variant: str = "v1",
+    default_out: str | Path | None = None,
+    default_branch_features: int = 4,
+) -> None:
+    """运行共享训练协议；独立实验入口只负责传入模型名称和默认输出目录。"""
+    if default_variant not in MODEL_VARIANTS:
+        raise ValueError(f"无效的默认模型：{default_variant}")
+    default_out = default_out or (ROOT / "runs" / "controlled" / "dnm")
+    parser = argparse.ArgumentParser(description="树突/普通卷积消融模型：受控检测训练")
+    parser.add_argument("--variant", choices=MODEL_VARIANTS, default=default_variant, help="模型结构；独立入口已设置正确默认值")
+    parser.add_argument("--data", default=str(CONTROLLED_DATA), help="所有受控模型共享的 YOLO data.yaml")
     parser.add_argument("--epochs", type=int, default=120)
     parser.add_argument("--img-size", type=int, default=640)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--width", type=int, default=32)
     parser.add_argument("--branches", type=int, default=4)
-    parser.add_argument("--branch-features", type=int, default=4, help="每个树突分支的乘性突触项数")
+    parser.add_argument("--branch-features", type=int, default=default_branch_features, help="每个树突分支的输入项数；卷积组用它匹配参数量")
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--device", default="")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--learning-rate", type=float, default=2e-3)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
-    parser.add_argument("--out", default=str(ROOT / "runs" / "controlled" / "dnm"))
+    parser.add_argument("--out", default=str(default_out))
     parser.add_argument("--eval-interval", type=int, default=1, help="每隔多少个 epoch 计算一次标准检测指标")
     parser.add_argument("--no-progress", action="store_true", help="关闭每个 batch 的 tqdm 进度条")
     args = parser.parse_args()
@@ -128,7 +137,7 @@ def main() -> None:
     val_loader = build_loader(val_set, args.batch_size, args.workers, False, device, args.seed)
     test_loader = build_loader(test_set, args.batch_size, args.workers, False, device, args.seed)
 
-    model = DendriticDetector(len(cfg["names"]), args.width, args.branches, args.branch_features).to(device)
+    model = build_detector(args.variant, len(cfg["names"]), args.width, args.branches, args.branch_features).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs, eta_min=0.0)
     out = Path(args.out).resolve()
@@ -143,8 +152,14 @@ def main() -> None:
 
     parameter_count = sum(parameter.numel() for parameter in model.parameters())
     protocol = {
-        "protocol": "controlled_scratch_v1",
-        "model": "dendritic_detector",
+        "protocol": "controlled_ablation_v2" if args.variant != "v1" else "controlled_scratch_v1",
+        "model": args.variant,
+        "aggregation": {
+            "v1": "direct_product",
+            "v2a": "log_domain_exact_product",
+            "v2b": "log_domain_geometric_mean",
+            "conv": "parameter_matched_convolution",
+        }[args.variant],
         "data": str(Path(args.data).resolve()),
         "epochs": args.epochs,
         "img_size": args.img_size,
@@ -158,11 +173,13 @@ def main() -> None:
         "scheduler": "CosineAnnealingLR(eta_min=0)",
         "amp": False,
         "gradient_accumulation": 1,
+        "branches": args.branches,
+        "branch_features": args.branch_features,
         "parameters": parameter_count,
     }
     (out / "experiment_config.json").write_text(json.dumps(protocol, indent=2, ensure_ascii=False), encoding="utf-8")
     device_name = torch.cuda.get_device_name(device) if device.type == "cuda" else "CPU"
-    print(f"受控协议：data={Path(args.data).resolve()}；预训练=False；增强=none；AdamW；AMP=False")
+    print(f"模型：{args.variant}；受控协议：data={Path(args.data).resolve()}；预训练=False；增强=none；AdamW；AMP=False")
     print(f"设备：{device_name}；模型参数量：{parameter_count:,}；输出目录：{out}")
 
     best_score, best_epoch, best_validation = float("-inf"), 0, None
@@ -172,6 +189,7 @@ def main() -> None:
             torch.cuda.synchronize(device)
             torch.cuda.reset_peak_memory_stats(device)
         epoch_start = time.perf_counter()
+        epoch_learning_rate = optimizer.param_groups[0]["lr"]  # 记录本轮实际使用的学习率。
         train_metrics = run_epoch(model, train_loader, optimizer, len(cfg["names"]), device, f"训练 {epoch:03d}/{args.epochs}", not args.no_progress)
         val_metrics = run_epoch(model, val_loader, None, len(cfg["names"]), device, f"验证 {epoch:03d}/{args.epochs}", not args.no_progress)
         detection_metrics = None
@@ -203,17 +221,17 @@ def main() -> None:
                 epoch, train_metrics["loss"], train_metrics["obj"], train_metrics["box"], train_metrics["cls"],
                 val_metrics["loss"], val_metrics["obj"], val_metrics["box"], val_metrics["cls"],
                 precision, recall, map50, map50_95, f1,
-                epoch_seconds, elapsed_seconds, gpu_memory_mb, optimizer.param_groups[0]["lr"],
+                epoch_seconds, elapsed_seconds, gpu_memory_mb, epoch_learning_rate,
             ))
         with comparison_path.open("a", newline="", encoding="utf-8") as file:
             csv.writer(file).writerow((
                 epoch, precision, recall, map50, map50_95,
-                epoch_seconds, elapsed_seconds, gpu_memory_mb, optimizer.param_groups[0]["lr"],
+                epoch_seconds, elapsed_seconds, gpu_memory_mb, epoch_learning_rate,
             ))
         checkpoint = {
             "model": model.state_dict(), "names": cfg["names"], "width": args.width,
             "branches": args.branches, "branch_features": args.branch_features, "img_size": args.img_size,
-            "epoch": epoch, "validation_metrics": detection_metrics,
+            "variant": args.variant, "epoch": epoch, "validation_metrics": detection_metrics,
         }
         torch.save(checkpoint, out / "last.pt")
         if detection_metrics is not None and float(detection_metrics["map50_95"]) > best_score:

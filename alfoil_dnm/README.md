@@ -2,7 +2,7 @@
 
 > 项目的正式入口和 APSPC 实际路径见仓库根目录 `README.md`；本文件仅说明自定义铝箔数据应满足的 YOLO 目录与标签格式。
 
-本实现面向 `缺陷位置 + 缺陷类别` 的检测任务，而不是整图分类。它以轻量卷积提取局部感受野特征，再用树突头完成分组的非线性交互：突触门控 -> 分支几何平均（log 域）-> 膜层聚合 -> 胞体输出。分支只处理通道组，不对整幅图像或全部特征直接连乘，因此避免传统 DNM 在高维输入上的数值下溢。
+本实现面向 `缺陷位置 + 缺陷类别` 的检测任务，而不是整图分类。V1 保留直接乘积；V2a 补充论文的突触距离 `d` 与分支强度 `v`，并在 log 域计算数学等价的原始乘积；V2b 仅把聚合改为 log 域几何平均。普通卷积组与 V2 参数量近似匹配，用于判断效果变化是否真正来自树突计算。
 
 ## 推荐数据集与使用顺序
 
@@ -38,6 +38,9 @@ names: [hole, scratch, pit, stain, insect]
 ```powershell
 # APSPC：先执行 prepare_apspc.py 和 cache_letterbox.py，再启动受控从零训练
 python .\alfoil_dnm\train.py
+python .\alfoil_dnm_v2a\train.py
+python .\alfoil_dnm_v2b\train.py
+python .\comparisons\conv_control\train.py
 
 # source 必须替换为实际待检测图片；此处使用 APSPC 原图作示例
 python .\alfoil_dnm\infer.py --weights .\runs\controlled\dnm\best.pt --source .\datasets\APSPC1\img0.jpg --data .\datasets\apspc_yolo_letterbox640\data.yaml --out .\runs\controlled\dnm\prediction_img0.jpg
@@ -54,9 +57,11 @@ GTX 1060（6 GB）建议从 `640, batch=4~8, branches=4, width=32` 起步；CPU 
 
 ## 与给定基础 DNM 的对应
 
-给定 `DNM_Linear2` 的突触—树突—膜—胞体思路被保留；本项目改为：
+给定论文和基础代码的突触—树突—膜—胞体思路被保留；V2 适配为：
 
 - 输入来自 CNN 的每个空间特征点，保留视觉局部感受野；
-- 通道按树突分支分组，而非所有维度相乘；
-- `exp(mean(log(gate)))` 代替直接 `prod`，使梯度和尺度稳定；
+- 128 通道先投影为少量、归一化到 0--1 的连续突触输入；
+- V2a 使用 `exp(sum(log(gate)))`，与论文直接乘积等价；
+- V2b 使用 `exp(mean(log(gate)))`，作为尺度稳定化的独立消融；
+- 每个突触学习正距离 `d`，每个分支学习正强度 `v`；
 - 胞体输出作为检测头的共享表征，分别接 objectness、类别和边框回归分支。
