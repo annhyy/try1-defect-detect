@@ -25,11 +25,22 @@ def build_targets(targets: list[Tensor], grid_h: int, grid_w: int, classes: int,
 
 def detector_loss(prediction: Tensor, targets: list[Tensor], num_classes: int):
     obj_t, box_t, cls_t, positive = build_targets(targets, prediction.shape[2], prediction.shape[3], num_classes, prediction.device)
-    obj_loss = F.binary_cross_entropy_with_logits(prediction[:, :1], obj_t, pos_weight=torch.tensor(4.0, device=prediction.device))
+    # 每张 80×80 网格图通常只有 1--2 个正样本。固定 pos_weight=4 会让数千个
+    # 背景格主导训练，模型只需预测“没有缺陷”即可获得很低损失。这里按当前 batch
+    # 的正负格数量自动平衡，并对易分类样本使用 focal 项降权。
+    positive_count = positive.sum().float().clamp_min(1.0)
+    negative_count = torch.tensor(float(obj_t.numel()), device=prediction.device) - positive_count
+    positive_weight = (negative_count / positive_count).clamp(max=4096.0)
+    object_bce = F.binary_cross_entropy_with_logits(prediction[:, :1], obj_t, reduction="none")
+    object_probability = prediction[:, :1].sigmoid()
+    probability_of_target = torch.where(obj_t.bool(), object_probability, 1 - object_probability)
+    focal_weight = (1 - probability_of_target).pow(2)
+    balance_weight = torch.where(obj_t.bool(), positive_weight, torch.ones_like(obj_t))
+    obj_loss = (object_bce * focal_weight * balance_weight).sum() / balance_weight.sum().clamp_min(1.0)
     if positive.any():
         box_loss = F.smooth_l1_loss(torch.sigmoid(prediction[:, 1:5])[positive.expand_as(prediction[:, 1:5])], box_t[positive.expand_as(box_t)])
         cls_loss = F.binary_cross_entropy_with_logits(prediction[:, 5:][positive.expand_as(prediction[:, 5:])], cls_t[positive.expand_as(cls_t)])
     else:
         box_loss, cls_loss = prediction.sum() * 0, prediction.sum() * 0
     total = obj_loss + 5.0 * box_loss + cls_loss
-    return total, {"loss": total.detach(), "obj": obj_loss.detach(), "box": box_loss.detach(), "cls": cls_loss.detach()}
+    return total, {"loss": total.detach(), "obj": obj_loss.detach(), "box": box_loss.detach(), "cls": cls_loss.detach(), "obj_pos_weight": positive_weight.detach()}

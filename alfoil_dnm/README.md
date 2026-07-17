@@ -36,11 +36,11 @@ names: [hole, scratch, pit, stain, insect]
 安装 PyTorch（按 CUDA 版本从 PyTorch 官网选择）以及 `pyyaml pillow numpy` 后：
 
 ```powershell
-# APSPC：先执行 prepare_apspc.py 和 cache_letterbox.py，再使用等比例缓存训练
-python .\alfoil_dnm\train.py --data .\datasets\apspc_yolo_letterbox640\data.yaml --epochs 120 --img-size 640 --batch-size 8 --branches 4 --branch-features 4 --out .\runs\apspc_dnm
+# APSPC：先执行 prepare_apspc.py 和 cache_letterbox.py，再启动受控从零训练
+python .\alfoil_dnm\train.py
 
 # source 必须替换为实际待检测图片；此处使用 APSPC 原图作示例
-python .\alfoil_dnm\infer.py --weights .\runs\apspc_dnm\best.pt --source .\datasets\APSPC1\img0.jpg --data .\datasets\apspc_yolo_letterbox640\data.yaml --out .\runs\apspc_dnm\prediction_img0.jpg
+python .\alfoil_dnm\infer.py --weights .\runs\controlled\dnm\best.pt --source .\datasets\APSPC1\img0.jpg --data .\datasets\apspc_yolo_letterbox640\data.yaml --out .\runs\controlled\dnm\prediction_img0.jpg
 ```
 
 GTX 1060（6 GB）建议从 `640, batch=4~8, branches=4, width=32` 起步；CPU 用 `512, batch=2`。若缺陷宽度小于原图 1/16，请先对长条产线图做重叠切片（例如 640x640、20% 重叠），再合并检测结果，避免下采样抹掉小缺陷。

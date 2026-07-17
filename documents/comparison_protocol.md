@@ -1,50 +1,97 @@
-# 树突检测器、YOLO11 与 YOLO26 的对比协议
+# 树突检测器、YOLO11 与 YOLO26：受控对比实验协议
 
-## 模型选择
+## 目的
 
-- 树突检测器：`alfoil_dnm/train.py`，树突部分严格采用突触—树突乘积—膜层求和—胞体 S 形激活；分支内仅使用 4 个投影局部特征。
-- YOLO11：`comparisons/yolo11/train.py`，使用 `yolo11n`。
-- YOLO26：`comparisons/yolo26/train.py`，使用 `yolo26n`。
+本文件规定三种模型的**严格可比较**训练方案：树突检测器、YOLO11n 和 YOLO26n。模型内部结构、检测头和损失函数本来就不同，因此不能比较 loss 的绝对值；论文的主比较指标应统一为 Precision、Recall、mAP50 和 mAP50-95。
 
-YOLO11 是成熟、广泛使用的 Ultralytics 检测基线；YOLO26 是更新一代模型，加入端到端、默认免 NMS 推理和更轻的检测头。二者均为主流 Ultralytics 生态中的实时检测模型，但论文报告时应明确版本与安装包版本。
+## 共同控制变量
 
-官方资料：<https://docs.ultralytics.com/models/yolo11>、<https://docs.ultralytics.com/models/yolo26>。
+三组受控实验均使用以下设置：
 
-## 公平设置
+| 项目 | 固定值 |
+|---|---|
+| 数据集 | `datasets/apspc_yolo_letterbox640/data.yaml` |
+| 数据划分 | 同一份 train / val / test（随机种子 42） |
+| 输入尺寸 | 640 × 640，等比例 Letterbox，不拉伸原图 |
+| 训练轮数 | 120 |
+| 批大小 | 8 |
+| 随机种子 | 42 |
+| 初始化 | 从零开始；不使用预训练权重 |
+| 数据增强 | 关闭（颜色、翻转、Mosaic、MixUp 等均关闭） |
+| 优化器 | AdamW，初始学习率 0.002，权重衰减 0.0001 |
+| 学习率策略 | 余弦衰减至 0，无 warmup |
+| AMP | 关闭 |
+| 梯度累积 | 不使用；`nbs=8` |
 
-1. 三个模型使用同一 `datasets/apspc_yolo_letterbox640/data.yaml`、同一训练/验证/测试划分、`img-size=640`、`epochs=120`、随机种子 42。该目录由原始数据等比例缩放并填充生成，三组实验均使用它，避免预处理差异影响结论。
-2. 第一组为**从零训练**：YOLO 脚本不加 `--pretrained`；树突模型本身从零训练。
-3. 第二组可单独报告**迁移学习**：YOLO 加 `--pretrained`，树突模型只有在获得相同来源的预训练骨干后才能算严格可比。
-4. 报告 mAP@0.5、mAP@0.5:0.95（YOLO 可直接输出）、每类 AP、召回率、参数量、显存、单图推理延迟。当前树突脚本每 5 个 epoch 计算一次 mAP@0.5；后续可加入 COCO 风格多阈值 mAP。
+模型的网络规模、检测头设计和损失公式属于待比较的模型差异，不能强行设成一致。树突模型使用树突乘积聚合；YOLO 使用各自的标准检测头。
 
-## 每个 epoch 的输出含义
+## 运行命令
 
-树突训练器会打印：
+在项目根目录执行。三条命令都默认使用上述受控设置；`--device 0` 可按需显式指定第一张 NVIDIA 显卡。
 
-```text
-train(total=..., obj=..., box=..., cls=...) val(total=..., obj=..., box=..., cls=...) mAP50=...
+```powershell
+# 树突检测器
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\train.py
+
+# YOLO11n，从 yolo11n.yaml 随机初始化
+D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo11\train.py
+
+# YOLO26n，从 yolo26n.yaml 随机初始化
+D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo26\train.py
 ```
 
-- `total`：总损失。
-- `obj`：目标存在性损失。
-- `box`：边框回归损失。
-- `cls`：缺陷类别损失。
-- `mAP50`：预测框与真值框 IoU 阈值为 0.5 时的平均精度均值；按 `--map-interval` 计算，未计算时显示 `--`。
+若加入 `--pretrained`，该实验变为迁移学习实验，必须与从零训练的三组结果分开报告，不能混在同一张主对比表中。
 
-每行末尾的 `time` 是本轮训练、验证和可能的 mAP 评估合计耗时，`elapsed` 是从训练开始累计的总耗时。相同信息会写到树突实验输出目录中的 `metrics.csv`；YOLO 实验则使用 Ultralytics 自动生成的 `results.csv` 与 `test_metrics.json`。
+## 统一输出与评价方法
 
-此前截图中的 `train=...` 与 `val=...` 只有总训练损失和验证损失，不能解释为准确率或 mAP。
+每个实验输出在 `runs/controlled/` 下：
 
-## 绘图对比
+| 模型 | 目录 |
+|---|---|
+| 树突检测器 | `runs/controlled/dnm/` |
+| YOLO11n | `runs/controlled/yolo11n/` |
+| YOLO26n | `runs/controlled/yolo26n/` |
 
-树突模型的逐轮日志文件为 `runs/.../metrics.csv`；YOLO11/YOLO26 的逐轮日志文件为各自 `runs/apspc/results.csv`。三者的 mAP@0.5 可以直接比较。不同模型的 loss 由不同公式、不同损失权重构成，不能比较绝对数值；绘图工具仅将各自训练 loss 按首轮值归一化，用于展示收敛趋势。
+每组都必须保存：
 
-注意：不带 `--pretrained` 启动 YOLO 脚本时，实际训练模型为 `yolo11n.yaml` 或 `yolo26n.yaml` 的随机初始化模型。Ultralytics 日志中 AMP 自检可能下载 `yolo26n.pt`，它仅用于检验混合精度计算，不会加载到当前训练模型；终端会打印“模型初始化：...；从零随机初始化”作为明确记录。
+- `comparison_metrics.csv`：统一字段 `epoch, precision, recall, map50, map50_95, epoch_seconds, elapsed_seconds, gpu_memory_mb, learning_rate`，用于横向曲线与表格。
+- `experiment_config.json`：实际数据路径、随机种子、优化器、增强、预训练状态、参数量等可复现实验配置。
+- `test_metrics.json`：以验证集 mAP50-95 最优权重在测试集上重新评价的最终指标。
+- 最优权重 `best.pt` 与最后一轮权重 `last.pt`。YOLO 的原生逐轮日志另保留为 `results.csv`；树突模型的原生逐轮损失保留为 `metrics.csv`。
 
-在三组训练完成后执行：
+树突模型和 YOLO 都每轮计算以下统一指标：
+
+- `Precision`：预测框中正确框的比例。
+- `Recall`：真实缺陷框被检出的比例。
+- `mAP50`：IoU=0.50 下，10 个类别 AP 的平均值。
+- `mAP50-95`：IoU 从 0.50 到 0.95、步长 0.05 的 AP 平均值；这是最终主指标。
+
+树突评估器使用与 YOLO 相同的类别、边框、NMS 与 IoU 定义，并在 0.50:0.95 的十个阈值上计算 AP。由于两类模型的 loss 定义不同，`train_total`、`box_loss`、`cls_loss` 等只用于观察**本模型自身是否收敛**，不参与模型优劣比较。
+
+可以在三组训练完成后绘制统一指标曲线：
 
 ```powershell
 D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\plot_metrics.py
 ```
 
-图像输出到 `comparisons/figures/metrics_comparison.png`。YOLO 同时提供标准 mAP@0.5:0.95；当前树突评估器只实现 mAP@0.5，因此最后一张子图不会伪造树突模型的 mAP@0.5:0.95。
+图像输出为 `runs/controlled/metrics_comparison.png`，包含 Precision、Recall、mAP50 和 mAP50-95 四个子图，不绘制不可比的 loss。
+
+## 树突模型的特别说明
+
+APSPC 的训练图像约有 6,400 个 stride-8 网格位置，但平均每张图只有约 1.7 个缺陷框。旧版树突训练器的 objectness 正负样本权重过低，背景网格容易主导梯度，导致 objectness 和 mAP 长期偏低。
+
+当前训练器将 objectness 改为动态正负样本平衡的 focal BCE，并按 `mAP50-95` 而非验证 loss 保存 `best.pt`。这是检测任务的必要修正，因此旧版树突训练结果不能与新的受控 YOLO 实验直接对比，需按本协议重新训练。
+
+## 旧的非受控运行
+
+`comparisons/yolo11/runs/apspc/` 若仍存在，属于此前 Ultralytics 默认训练实验：它可能包含默认增强、自动优化器或 AMP 等设置。该结果可作为参考，但**不能**列入本文件定义的严格受控主对比。新的受控结果只读取 `runs/controlled/`。
+
+## 每轮终端输出
+
+树突模型会打印自身的训练/验证损失，并在同一行打印统一指标和耗时，例如：
+
+```text
+epoch 012/120 train(total=..., obj=..., box=..., cls=...) val(total=..., obj=..., box=..., cls=...) P=... R=... mAP50=... mAP50-95=... time=... elapsed=...
+```
+
+YOLO 的 `box_loss`、`cls_loss`、`dfl_loss` 与树突模型的损失项没有一一对应关系；比较时只读取各自的 `comparison_metrics.csv`。
