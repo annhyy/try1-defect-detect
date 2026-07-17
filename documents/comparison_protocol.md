@@ -39,6 +39,8 @@ train(total=..., obj=..., box=..., cls=...) val(total=..., obj=..., box=..., cls
 
 树突模型的逐轮日志文件为 `runs/.../metrics.csv`；YOLO11/YOLO26 的逐轮日志文件为各自 `runs/apspc/results.csv`。三者的 mAP@0.5 可以直接比较。不同模型的 loss 由不同公式、不同损失权重构成，不能比较绝对数值；绘图工具仅将各自训练 loss 按首轮值归一化，用于展示收敛趋势。
 
+注意：不带 `--pretrained` 启动 YOLO 脚本时，实际训练模型为 `yolo11n.yaml` 或 `yolo26n.yaml` 的随机初始化模型。Ultralytics 日志中 AMP 自检可能下载 `yolo26n.pt`，它仅用于检验混合精度计算，不会加载到当前训练模型；终端会打印“模型初始化：...；从零随机初始化”作为明确记录。
+
 在三组训练完成后执行：
 
 ```powershell
