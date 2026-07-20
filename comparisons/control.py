@@ -1,4 +1,4 @@
-"""三模型共用的受控对照协议与 YOLO 日志标准化工具。"""
+"""表面缺陷分类对照协议与 Ultralytics 日志标准化工具。"""
 from __future__ import annotations
 
 import csv
@@ -8,47 +8,58 @@ from typing import Any
 
 
 COMPARISON_COLUMNS = (
-    "epoch", "precision", "recall", "map50", "map50_95",
+    "epoch",
+    "train_loss", "train_accuracy", "train_macro_precision", "train_macro_recall", "train_macro_f1",
+    "val_loss", "val_accuracy", "val_macro_precision", "val_macro_recall", "val_macro_f1",
     "epoch_seconds", "elapsed_seconds", "gpu_memory_mb", "learning_rate",
 )
 
 
-def controlled_yolo_options(epochs: int) -> dict[str, Any]:
-    """返回与树突模型对齐的 YOLO 训练设置。
-
-    模型骨干与检测损失本身是待比较对象，不能强行相同；其余数据、训练预算、
-    优化器、增强、AMP 和名义批量均固定，避免额外变量干扰。
-    """
-    return {
+def controlled_classification_options(epochs: int, augmentation: bool) -> dict[str, Any]:
+    """返回 YOLO11/26 分类共用的优化和轻量增强设置。"""
+    options: dict[str, Any] = {
         "optimizer": "AdamW",
-        "lr0": 2e-3,
+        "lr0": 1e-3,
         "lrf": 0.0,
         "cos_lr": True,
         "weight_decay": 1e-4,
         "warmup_epochs": 0.0,
-        "nbs": 8,
+        "nbs": 64,
         "workers": 2,
         "amp": False,
         "deterministic": True,
         "patience": epochs,
-        # 关闭所有几何、颜色与混合增强，使输入样本与树突模型完全一致。
-        "hsv_h": 0.0,
-        "hsv_s": 0.0,
-        "hsv_v": 0.0,
-        "degrees": 0.0,
-        "translate": 0.0,
-        "scale": 0.0,
-        "shear": 0.0,
-        "perspective": 0.0,
-        "flipud": 0.0,
-        "fliplr": 0.0,
-        "mosaic": 0.0,
-        "close_mosaic": 0,
-        "mixup": 0.0,
-        "cutmix": 0.0,
-        "copy_paste": 0.0,
         "erasing": 0.0,
+        # 禁用 Ultralytics 额外的自动增强，避免与树突训练器出现隐藏策略差异。
+        "auto_augment": None,
     }
+    if augmentation:
+        options.update({
+            "hsv_h": 0.0,
+            "hsv_s": 0.0,
+            "hsv_v": 0.1,
+            "degrees": 10.0,
+            "translate": 0.05,
+            "scale": 0.1,
+            "shear": 0.0,
+            "perspective": 0.0,
+            "flipud": 0.5,
+            "fliplr": 0.5,
+        })
+    else:
+        options.update({
+            "hsv_h": 0.0,
+            "hsv_s": 0.0,
+            "hsv_v": 0.0,
+            "degrees": 0.0,
+            "translate": 0.0,
+            "scale": 0.0,
+            "shear": 0.0,
+            "perspective": 0.0,
+            "flipud": 0.0,
+            "fliplr": 0.0,
+        })
+    return options
 
 
 def _number(row: dict[str, str], *names: str) -> float | str:
@@ -60,36 +71,63 @@ def _number(row: dict[str, str], *names: str) -> float | str:
 
 
 def write_protocol(output: Path, protocol: dict[str, Any]) -> None:
-    """将实际训练协议和模型初始化方式保存到每个实验输出目录。"""
-    (output / "experiment_config.json").write_text(json.dumps(protocol, indent=2, ensure_ascii=False), encoding="utf-8")
+    (output / "experiment_config.json").write_text(
+        json.dumps(protocol, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
 
-def standardize_yolo_metrics(
+def standardize_yolo_classification_metrics(
     results_csv: Path,
     output_csv: Path,
     gpu_memory_mb_by_epoch: dict[int, float] | None = None,
+    validation_metrics_by_epoch: dict[int, dict[str, float]] | None = None,
+    epoch_seconds_by_epoch: dict[int, float] | None = None,
 ) -> None:
-    """将 Ultralytics 的 ``results.csv`` 转换为三模型共用指标列。"""
+    """把 YOLO 分类逐轮日志转为与树突训练器一致的列。
+
+    Ultralytics 原生日志只提供 Top-1 Accuracy；本项目在每轮结束后使用共用
+    验证器补算 Accuracy、Macro-Precision、Macro-Recall 和 Macro-F1。
+    """
     with results_csv.open("r", newline="", encoding="utf-8-sig") as file:
-        rows = [{key.strip(): value.strip() for key, value in row.items() if key} for row in csv.DictReader(file)]
+        rows = [
+            {key.strip(): value.strip() for key, value in row.items() if key}
+            for row in csv.DictReader(file)
+        ]
+    raw_epochs = [int(float(row["epoch"])) for row in rows if row.get("epoch", "")]
+    epoch_offset = 1 if raw_epochs and raw_epochs[0] == 0 else 0
     previous_elapsed = 0.0
     with output_csv.open("w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
         writer.writerow(COMPARISON_COLUMNS)
         for row in rows:
-            elapsed = _number(row, "time")
-            elapsed = float(elapsed) if elapsed != "" else previous_elapsed
-            epoch_seconds = elapsed - previous_elapsed
+            raw_epoch = _number(row, "epoch")
+            epoch = int(raw_epoch) + epoch_offset if raw_epoch != "" else ""
+            elapsed_value = _number(row, "time")
+            native_elapsed = float(elapsed_value) if elapsed_value != "" else previous_elapsed
+            if epoch in (epoch_seconds_by_epoch or {}):
+                epoch_seconds = epoch_seconds_by_epoch[epoch]
+                elapsed = previous_elapsed + epoch_seconds
+            else:
+                elapsed = native_elapsed
+                epoch_seconds = elapsed - previous_elapsed
             previous_elapsed = elapsed
-            epoch = _number(row, "epoch")
-            # Ultralytics CSV 从 0 开始计 epoch；树突日志从 1 开始，统一为 1 开始。
-            epoch = int(epoch) + 1 if epoch != "" else ""
+            accuracy = _number(
+                row,
+                "metrics/accuracy_top1",
+                "metrics/accuracy_top1(B)",
+                "metrics/accuracy",
+            )
+            unified = (validation_metrics_by_epoch or {}).get(epoch, {})
+            if unified:
+                accuracy = unified["accuracy"]
             writer.writerow((
                 epoch,
-                _number(row, "metrics/precision(B)", "metrics/precision"),
-                _number(row, "metrics/recall(B)", "metrics/recall"),
-                _number(row, "metrics/mAP50(B)", "metrics/mAP50"),
-                _number(row, "metrics/mAP50-95(B)", "metrics/mAP50-95"),
+                _number(row, "train/loss"), "", "", "", "",
+                unified.get("loss", _number(row, "val/loss")),
+                accuracy,
+                unified.get("macro_precision", ""),
+                unified.get("macro_recall", ""),
+                unified.get("macro_f1", ""),
                 epoch_seconds,
                 elapsed,
                 (gpu_memory_mb_by_epoch or {}).get(epoch, ""),

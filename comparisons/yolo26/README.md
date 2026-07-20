@@ -1,13 +1,15 @@
-# YOLO26 对比实验
+# YOLO26n：X-SDD 七分类基线
 
-YOLO26 是 Ultralytics 的较新一代模型，支持端到端、默认免 NMS 的检测推理。为控制算力，默认使用最小的 `yolo26n`。
+这里使用 Ultralytics `yolo26n-cls` 图像分类模型，不是目标检测模型。默认读取
+`datasets/xsdd_yolo11_classification/`，从 `yolo26n-cls.yaml` 随机初始化，与
+YOLO11、DNM 和普通卷积对照保持一致。
 
 ```powershell
-# 受控的从零训练：无预训练、无增强、AdamW、同一数据/批量/训练轮数
-python .\comparisons\yolo26\train.py --epochs 120 --img-size 640 --batch-size 8
-
-# 使用 COCO 预训练权重的迁移学习（需要在报告中单独标注）
-python .\comparisons\yolo26\train.py --pretrained --epochs 120 --img-size 640 --batch-size 8
+D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo26\train.py
 ```
 
-默认加载 `datasets/apspc_yolo_letterbox640/data.yaml`，与树突模型使用相同的等比例缓存图像、标签和划分。受控结果写入 `runs/controlled/yolo26n/`：原生 `results.csv` 保留 YOLO 私有 loss，`comparison_metrics.csv` 只保存可横向比较的 Precision、Recall、mAP50、mAP50-95、时间和学习率，`test_metrics.json` 保存测试集最终指标。完成三组训练后，在仓库根目录运行 `python .\comparisons\plot_metrics.py` 生成统一指标图。
+默认结果：`runs1/controlled/xsdd_yolo26n_cls_scratch/`。只有显式添加
+`--pretrained` 才加载 ImageNet 权重；预训练结果必须作为迁移学习参考单独报告。
+
+逐轮和最终输出格式与 YOLO11 相同，包括 loss、Accuracy、Macro-P/R/F1、参数量、
+CPU/GPU batch=1 推理速度、混淆矩阵和逐图预测。

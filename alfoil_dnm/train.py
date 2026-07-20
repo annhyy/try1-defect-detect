@@ -1,46 +1,47 @@
-"""受控对照协议下的树突缺陷检测训练入口。"""
+"""X-SDD 受控树突/普通卷积图像分类训练入口。"""
 from __future__ import annotations
 
 import argparse
 import csv
 import json
 import random
+import sys
 import time
 from pathlib import Path
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
+from torch import nn
 from tqdm.auto import tqdm
-
-try:  # 同时兼容 ``python -m alfoil_dnm.train`` 与 IDE 直接运行。
-    from .data import YoloDefectDataset, collate, load_data_yaml
-    from .loss import detector_loss
-    from .metrics import evaluate_detection
-    from .model_variants import MODEL_VARIANTS, build_detector
-except ImportError:
-    from data import YoloDefectDataset, collate, load_data_yaml
-    from loss import detector_loss
-    from metrics import evaluate_detection
-    from model_variants import MODEL_VARIANTS, build_detector
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTROLLED_DATA = ROOT / "datasets" / "apspc_yolo_letterbox640" / "data.yaml"
-CSV_COLUMNS = (
-    "epoch", "train_total", "train_obj", "train_box", "train_cls",
-    "val_total", "val_obj", "val_box", "val_cls",
-    "precision", "recall", "map50", "map50_95", "f1",
-    "epoch_seconds", "elapsed_seconds", "gpu_memory_mb", "learning_rate",
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from classification.data import build_classification_loaders
+from classification.metrics import (
+    benchmark_classifier,
+    evaluate_classifier,
+    metrics_from_predictions,
+    public_metrics,
+    save_confusion_matrix,
+    save_predictions,
 )
-COMPARISON_COLUMNS = (
-    "epoch", "precision", "recall", "map50", "map50_95",
+from classification.models import MODEL_VARIANTS, build_classifier
+
+
+CONTROLLED_DATA = ROOT / "datasets" / "xsdd_yolo11_classification"
+CSV_COLUMNS = (
+    "epoch",
+    "train_loss", "train_accuracy", "train_macro_precision", "train_macro_recall", "train_macro_f1",
+    "val_loss", "val_accuracy", "val_macro_precision", "val_macro_recall", "val_macro_f1",
     "epoch_seconds", "elapsed_seconds", "gpu_memory_mb", "learning_rate",
 )
 
 
 def set_seed(seed: int) -> None:
-    """固定 Python、NumPy 与 PyTorch 的随机源，使受控实验可复现。"""
+    """固定所有随机源，使不同结构使用相同的可复现实验协议。"""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -51,50 +52,48 @@ def set_seed(seed: int) -> None:
     torch.use_deterministic_algorithms(True, warn_only=True)
 
 
-def run_epoch(model, loader, optimizer, num_classes, device, description: str, show_progress: bool):
-    """运行一个训练或验证 epoch，返回模型内部 loss 用于观察收敛。"""
-    model.train(optimizer is not None)
-    totals = {"loss": 0.0, "obj": 0.0, "box": 0.0, "cls": 0.0}
+def train_one_epoch(
+    model: nn.Module,
+    loader,
+    optimizer,
+    criterion: nn.Module,
+    device: torch.device,
+    class_names: list[str],
+    description: str,
+    show_progress: bool,
+) -> dict:
+    """训练一个 epoch，同时计算图像级分类指标。"""
+    model.train()
+    total_loss = 0.0
+    targets: list[int] = []
+    predictions: list[int] = []
     batches = tqdm(loader, desc=description, leave=False, dynamic_ncols=True, disable=not show_progress)
-    for images, targets, _ in batches:
+    for images, labels in batches:
         images = images.to(device, non_blocking=device.type == "cuda")
-        with torch.set_grad_enabled(optimizer is not None):
-            prediction = model(images)
-            loss, details = detector_loss(prediction, targets, num_classes)
-        if optimizer is not None:
-            optimizer.zero_grad(set_to_none=True)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
-            optimizer.step()
-        for key in totals:
-            totals[key] += float(details[key]) * images.shape[0]
-        batches.set_postfix(loss=f"{float(details['loss']):.4f}")
-    return {key: value / len(loader.dataset) for key, value in totals.items()}
+        labels = labels.to(device, non_blocking=device.type == "cuda")
+        optimizer.zero_grad(set_to_none=True)
+        logits = model(images)
+        loss = criterion(logits, labels)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
+        optimizer.step()
+
+        total_loss += float(loss.detach()) * images.shape[0]
+        targets.extend(labels.detach().cpu().tolist())
+        predictions.extend(logits.detach().argmax(dim=1).cpu().tolist())
+        batches.set_postfix(loss=f"{float(loss.detach()):.4f}")
+    metrics = metrics_from_predictions(targets, predictions, class_names)
+    metrics["loss"] = total_loss / len(loader.dataset)
+    return metrics
 
 
-def build_loader(dataset, batch_size: int, workers: int, shuffle: bool, device: torch.device, seed: int) -> DataLoader:
-    """建立固定随机种子的 DataLoader；不做图像增强，保持三模型输入一致。"""
-    generator = torch.Generator()
-    generator.manual_seed(seed)
-    return DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        num_workers=workers,
-        pin_memory=device.type == "cuda",
-        persistent_workers=workers > 0,
-        collate_fn=collate,
-        generator=generator,
+def csv_row(epoch: int, train: dict, val: dict, epoch_seconds: float, elapsed: float, memory: float, lr: float):
+    return (
+        epoch,
+        train["loss"], train["accuracy"], train["macro_precision"], train["macro_recall"], train["macro_f1"],
+        val["loss"], val["accuracy"], val["macro_precision"], val["macro_recall"], val["macro_f1"],
+        epoch_seconds, elapsed, memory, lr,
     )
-
-
-def metric_row(metrics: dict | None) -> tuple[float | str, float | str, float | str, float | str, float | str]:
-    """将评估字典转换为 CSV/终端统一字段。"""
-    if metrics is None:
-        return "", "", "", "", ""
-    precision, recall = float(metrics["precision"]), float(metrics["recall"])
-    f1 = 2 * precision * recall / max(precision + recall, 1e-12)
-    return precision, recall, float(metrics["map50"]), float(metrics["map50_95"]), f1
 
 
 def main(
@@ -102,154 +101,187 @@ def main(
     default_out: str | Path | None = None,
     default_branch_features: int = 4,
 ) -> None:
-    """运行共享训练协议；独立实验入口只负责传入模型名称和默认输出目录。"""
+    """运行共享七分类协议；各独立入口只覆盖模型名称和输出目录。"""
     if default_variant not in MODEL_VARIANTS:
-        raise ValueError(f"无效的默认模型：{default_variant}")
-    default_out = default_out or (ROOT / "runs" / "controlled" / "dnm")
-    parser = argparse.ArgumentParser(description="树突/普通卷积消融模型：受控检测训练")
-    parser.add_argument("--variant", choices=MODEL_VARIANTS, default=default_variant, help="模型结构；独立入口已设置正确默认值")
-    parser.add_argument("--data", default=str(CONTROLLED_DATA), help="所有受控模型共享的 YOLO data.yaml")
-    parser.add_argument("--epochs", type=int, default=120)
-    parser.add_argument("--img-size", type=int, default=640)
-    parser.add_argument("--batch-size", type=int, default=8)
+        raise ValueError(f"无效默认模型：{default_variant}")
+    default_out = default_out or (ROOT / "runs1" / "controlled" / "xsdd_dnm_v1_cls")
+    parser = argparse.ArgumentParser(description="X-SDD 树突/普通卷积受控分类训练")
+    parser.add_argument("--variant", choices=MODEL_VARIANTS, default=default_variant)
+    parser.add_argument("--data", default=str(CONTROLLED_DATA), help="包含 train/val/test 类别文件夹的根目录")
+    parser.add_argument("--epochs", type=int, default=100)
+    parser.add_argument("--img-size", type=int, default=224)
+    parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--width", type=int, default=32)
     parser.add_argument("--branches", type=int, default=4)
-    parser.add_argument("--branch-features", type=int, default=default_branch_features, help="每个树突分支的输入项数；卷积组用它匹配参数量")
+    parser.add_argument("--branch-features", type=int, default=default_branch_features)
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--device", default="")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--learning-rate", type=float, default=2e-3)
+    parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
+    parser.add_argument("--label-smoothing", type=float, default=0.0)
     parser.add_argument("--out", default=str(default_out))
-    parser.add_argument("--eval-interval", type=int, default=1, help="每隔多少个 epoch 计算一次标准检测指标")
-    parser.add_argument("--no-progress", action="store_true", help="关闭每个 batch 的 tqdm 进度条")
+    parser.add_argument("--no-augmentation", action="store_true", help="关闭轻量几何和亮度增强")
+    parser.add_argument("--no-progress", action="store_true")
+    parser.add_argument("--benchmark-iterations", type=int, default=200)
     args = parser.parse_args()
-    if args.eval_interval < 1:
-        raise ValueError("--eval-interval 必须大于等于 1")
 
     set_seed(args.seed)
     device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
-    cfg = load_data_yaml(args.data)
-    train_set = YoloDefectDataset(cfg, "train", args.img_size)
-    val_set = YoloDefectDataset(cfg, "val", args.img_size)
-    test_set = YoloDefectDataset(cfg, "test", args.img_size)
-    train_loader = build_loader(train_set, args.batch_size, args.workers, True, device, args.seed)
-    val_loader = build_loader(val_set, args.batch_size, args.workers, False, device, args.seed)
-    test_loader = build_loader(test_set, args.batch_size, args.workers, False, device, args.seed)
-
-    model = build_detector(args.variant, len(cfg["names"]), args.width, args.branches, args.branch_features).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
+    datasets, loaders = build_classification_loaders(
+        args.data,
+        args.img_size,
+        args.batch_size,
+        args.workers,
+        device,
+        args.seed,
+        augmentation=not args.no_augmentation,
+    )
+    class_names = datasets["train"].classes
+    model = build_classifier(
+        args.variant, len(class_names), args.width, args.branches, args.branch_features
+    ).to(device)
+    criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
+    optimizer = torch.optim.AdamW(
+        model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
+    )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.epochs, eta_min=0.0)
-    out = Path(args.out).resolve()
-    out.mkdir(parents=True, exist_ok=True)
-    metrics_path = out / "metrics.csv"
-    comparison_path = out / "comparison_metrics.csv"
-    # 本训练器不支持断点续训；每次启动均重写 CSV，避免不同运行的指标混在一起。
-    with metrics_path.open("w", newline="", encoding="utf-8") as file:
-        csv.writer(file).writerow(CSV_COLUMNS)
-    with comparison_path.open("w", newline="", encoding="utf-8") as file:
-        csv.writer(file).writerow(COMPARISON_COLUMNS)
+
+    output = Path(args.out).resolve()
+    output.mkdir(parents=True, exist_ok=True)
+    metrics_path = output / "metrics.csv"
+    comparison_path = output / "comparison_metrics.csv"
+    for path in (metrics_path, comparison_path):
+        with path.open("w", newline="", encoding="utf-8") as file:
+            csv.writer(file).writerow(CSV_COLUMNS)
 
     parameter_count = sum(parameter.numel() for parameter in model.parameters())
+    trainable_count = sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad)
     protocol = {
-        "protocol": "controlled_ablation_v2" if args.variant != "v1" else "controlled_scratch_v1",
+        "protocol": "controlled_classification_v1",
+        "task": "classification",
         "model": args.variant,
         "aggregation": {
-            "v1": "direct_product",
+            "v1": "legacy_direct_product",
             "v2a": "log_domain_exact_product",
             "v2b": "log_domain_geometric_mean",
-            "conv": "parameter_matched_convolution",
+            "conv": "parameter_matched_mlp",
         }[args.variant],
         "data": str(Path(args.data).resolve()),
+        "class_names": class_names,
         "epochs": args.epochs,
         "img_size": args.img_size,
         "batch_size": args.batch_size,
         "seed": args.seed,
         "pretrained": False,
-        "augmentation": "none",
+        "augmentation": not args.no_augmentation,
         "optimizer": "AdamW",
         "learning_rate": args.learning_rate,
         "weight_decay": args.weight_decay,
+        "label_smoothing": args.label_smoothing,
         "scheduler": "CosineAnnealingLR(eta_min=0)",
-        "amp": False,
-        "gradient_accumulation": 1,
+        # YOLO 的 best.pt 依据验证 Top-1 Accuracy 选择；这里使用同一标准。
+        "selection_metric": "validation_accuracy",
         "branches": args.branches,
         "branch_features": args.branch_features,
         "parameters": parameter_count,
+        "trainable_parameters": trainable_count,
     }
-    (out / "experiment_config.json").write_text(json.dumps(protocol, indent=2, ensure_ascii=False), encoding="utf-8")
-    device_name = torch.cuda.get_device_name(device) if device.type == "cuda" else "CPU"
-    print(f"模型：{args.variant}；受控协议：data={Path(args.data).resolve()}；预训练=False；增强=none；AdamW；AMP=False")
-    print(f"设备：{device_name}；模型参数量：{parameter_count:,}；输出目录：{out}")
+    (output / "experiment_config.json").write_text(
+        json.dumps(protocol, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
-    best_score, best_epoch, best_validation = float("-inf"), 0, None
+    device_name = torch.cuda.get_device_name(device) if device.type == "cuda" else "CPU"
+    print(
+        f"任务：{Path(args.data).resolve().name} {len(class_names)} 分类；"
+        f"模型：{args.variant}；输入：{args.img_size}×{args.img_size}"
+    )
+    print(f"设备：{device_name}；参数量：{parameter_count:,}；输出：{output}")
+    print(f"类别：{', '.join(class_names)}")
+
+    best_score = float("-inf")
+    best_epoch = 0
+    best_validation = None
     training_start = time.perf_counter()
     for epoch in range(1, args.epochs + 1):
         if device.type == "cuda":
             torch.cuda.synchronize(device)
             torch.cuda.reset_peak_memory_stats(device)
         epoch_start = time.perf_counter()
-        epoch_learning_rate = optimizer.param_groups[0]["lr"]  # 记录本轮实际使用的学习率。
-        train_metrics = run_epoch(model, train_loader, optimizer, len(cfg["names"]), device, f"训练 {epoch:03d}/{args.epochs}", not args.no_progress)
-        val_metrics = run_epoch(model, val_loader, None, len(cfg["names"]), device, f"验证 {epoch:03d}/{args.epochs}", not args.no_progress)
-        detection_metrics = None
-        if epoch % args.eval_interval == 0 or epoch == args.epochs:
-            detection_metrics = evaluate_detection(model, val_loader, len(cfg["names"]), device, cfg["names"])
+        learning_rate = optimizer.param_groups[0]["lr"]
+        train_metrics = train_one_epoch(
+            model, loaders["train"], optimizer, criterion, device, class_names,
+            f"训练 {epoch:03d}/{args.epochs}", not args.no_progress,
+        )
+        val_metrics = evaluate_classifier(
+            model, loaders["val"], device, class_names, criterion
+        )
         scheduler.step()
         if device.type == "cuda":
             torch.cuda.synchronize(device)
-            gpu_memory_mb = torch.cuda.max_memory_allocated(device) / 1024 ** 2
+            gpu_memory_mb = torch.cuda.max_memory_allocated(device) / 1024**2
         else:
             gpu_memory_mb = 0.0
         epoch_seconds = time.perf_counter() - epoch_start
         elapsed_seconds = time.perf_counter() - training_start
-        precision, recall, map50, map50_95, f1 = metric_row(detection_metrics)
+        row = csv_row(
+            epoch, train_metrics, val_metrics, epoch_seconds, elapsed_seconds,
+            gpu_memory_mb, learning_rate,
+        )
+        for path in (metrics_path, comparison_path):
+            with path.open("a", newline="", encoding="utf-8") as file:
+                csv.writer(file).writerow(row)
+
         print(
             f"epoch {epoch:03d}/{args.epochs} "
-            f"train(total={train_metrics['loss']:.4f}, obj={train_metrics['obj']:.4f}, box={train_metrics['box']:.4f}, cls={train_metrics['cls']:.4f}) "
-            f"val(total={val_metrics['loss']:.4f}, obj={val_metrics['obj']:.4f}, box={val_metrics['box']:.4f}, cls={val_metrics['cls']:.4f}) "
+            f"train(loss={train_metrics['loss']:.4f}, acc={train_metrics['accuracy']:.4f}, f1={train_metrics['macro_f1']:.4f}) "
+            f"val(loss={val_metrics['loss']:.4f}, acc={val_metrics['accuracy']:.4f}, f1={val_metrics['macro_f1']:.4f}) "
             f"time={epoch_seconds:.1f}s gpu_mem={gpu_memory_mb:.0f}MB"
         )
-        if detection_metrics is not None:
-            print(
-                f"{'Class':>20} {'Images':>8} {'Instances':>10} {'Box(P':>10} {'R':>8} {'mAP50':>9} {'mAP50-95)':>11}\n"
-                f"{'all':>20} {detection_metrics['images']:>8} {detection_metrics['instances']:>10} "
-                f"{precision:>10.4f} {recall:>8.4f} {map50:>9.4f} {map50_95:>11.4f}"
-            )
-        with metrics_path.open("a", newline="", encoding="utf-8") as file:
-            csv.writer(file).writerow((
-                epoch, train_metrics["loss"], train_metrics["obj"], train_metrics["box"], train_metrics["cls"],
-                val_metrics["loss"], val_metrics["obj"], val_metrics["box"], val_metrics["cls"],
-                precision, recall, map50, map50_95, f1,
-                epoch_seconds, elapsed_seconds, gpu_memory_mb, epoch_learning_rate,
-            ))
-        with comparison_path.open("a", newline="", encoding="utf-8") as file:
-            csv.writer(file).writerow((
-                epoch, precision, recall, map50, map50_95,
-                epoch_seconds, elapsed_seconds, gpu_memory_mb, epoch_learning_rate,
-            ))
         checkpoint = {
-            "model": model.state_dict(), "names": cfg["names"], "width": args.width,
-            "branches": args.branches, "branch_features": args.branch_features, "img_size": args.img_size,
-            "variant": args.variant, "epoch": epoch, "validation_metrics": detection_metrics,
+            "model": model.state_dict(),
+            "variant": args.variant,
+            "class_names": class_names,
+            "width": args.width,
+            "branches": args.branches,
+            "branch_features": args.branch_features,
+            "img_size": args.img_size,
+            "epoch": epoch,
+            "validation": public_metrics(val_metrics),
         }
-        torch.save(checkpoint, out / "last.pt")
-        if detection_metrics is not None and float(detection_metrics["map50_95"]) > best_score:
-            best_score, best_epoch, best_validation = float(detection_metrics["map50_95"]), epoch, detection_metrics
-            torch.save(checkpoint, out / "best.pt")
+        torch.save(checkpoint, output / "last.pt")
+        if val_metrics["accuracy"] > best_score:
+            best_score = float(val_metrics["accuracy"])
+            best_epoch = epoch
+            best_validation = public_metrics(val_metrics)
+            torch.save(checkpoint, output / "best.pt")
 
-    best_checkpoint = torch.load(out / "best.pt", map_location=device, weights_only=False)
+    best_checkpoint = torch.load(output / "best.pt", map_location=device, weights_only=False)
     model.load_state_dict(best_checkpoint["model"])
-    test_metrics = evaluate_detection(model, test_loader, len(cfg["names"]), device, cfg["names"])
+    test_metrics = evaluate_classifier(
+        model, loaders["test"], device, class_names, criterion
+    )
+    save_confusion_matrix(output / "confusion_matrix.csv", test_metrics, class_names)
+    save_predictions(output / "test_predictions.csv", datasets["test"], test_metrics)
+    speed = benchmark_classifier(
+        model, device, args.img_size, iterations=args.benchmark_iterations
+    )
+    checkpoint_size_mb = (output / "best.pt").stat().st_size / 1024**2
     summary = {
         **protocol,
         "best_epoch": best_epoch,
         "best_validation": best_validation,
-        "test": test_metrics,
+        "test": public_metrics(test_metrics),
+        "speed_batch1_forward": speed,
+        "parameter_size_fp32_mb": parameter_count * 4 / 1024**2,
+        "checkpoint_size_mb": checkpoint_size_mb,
     }
-    (out / "test_metrics.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
-    print("测试集指标：")
-    print(json.dumps(test_metrics, indent=2, ensure_ascii=False))
+    (output / "test_metrics.json").write_text(
+        json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    print("测试集最终结果：")
+    print(json.dumps(summary["test"], indent=2, ensure_ascii=False))
+    print(f"推理测速：{json.dumps(speed, ensure_ascii=False)}")
 
 
 if __name__ == "__main__":

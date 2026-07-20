@@ -1,4 +1,4 @@
-"""DNM-V2b：论文参数补全、log 域几何平均的独立训练入口。"""
+"""DNM-V2b：X-SDD 分类、log 域几何平均的独立训练入口。"""
 from __future__ import annotations
 
 import sys
@@ -15,6 +15,6 @@ from alfoil_dnm.train import main
 if __name__ == "__main__":
     main(
         default_variant="v2b",
-        default_out=ROOT / "runs" / "controlled" / "dnm_v2b",
+        default_out=ROOT / "runs1" / "controlled" / "xsdd_dnm_v2b_cls",
         default_branch_features=8,
     )

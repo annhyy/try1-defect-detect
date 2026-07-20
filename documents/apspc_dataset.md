@@ -1,5 +1,9 @@
 # APSPC 数据集与训练记录
 
+> 状态说明：本文件记录早期 **目标检测** 实验。当前主实验已切换为 X-SDD 七分类，
+> 新训练入口和结果分别使用 `datasets/xsdd_yolo11_classification` 与 `runs1/`；此处 APSPC
+> 的 XML、YOLO 框和 `runs/` 不参与当前分类对比。
+
 ## 数据集来源
 
 APSPC 是 **Aluminum Profile Surface Detection Database**。它由 2018 年广东工业智造大数据创新大赛“铝型材表面瑕疵识别”的天池原始分类数据重标注而来，下载页说明其为缺陷检测数据集。

@@ -1,11 +1,12 @@
-# 普通卷积参数匹配对照
+# 普通神经网络分类头对照
 
-该模型与 DNM-V2a/V2b 共用同一骨干、检测头、损失、数据和训练设置，只把树突
-变换替换为 `1x1 -> 深度3x3 -> 1x1` 普通卷积分支。瓶颈宽度由 DNM 的分支数
-和输入数自动计算，使默认模型参数量尽可能接近，从而检验提升是否真正来自树突。
+该入口与 DNM-V2a/V2b 共用同一个轻量卷积骨干、全局池化、数据和优化协议，只把
+树突分类头替换为 `Linear + LayerNorm + SiLU + Linear`。隐藏宽度根据 DNM 头参数量
+自动估算，用来判断差异来自乘性树突结构还是普通参数规模。
 
 ```powershell
 D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\conv_control\train.py
 ```
 
-结果写入 `runs/controlled/conv_control/`。
+默认读取 X-SDD 固定七分类划分，结果保存到
+`runs1/controlled/xsdd_conv_control_cls/`。

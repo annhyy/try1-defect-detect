@@ -1,13 +1,13 @@
-# DNM-V2a：论文忠实乘积版
+# DNM-V2a：论文公式、log 域精确乘积
 
-该入口复用 `alfoil_dnm/train.py` 的受控训练协议。与 V1 相比，它补充了每个
-突触的正距离参数 `d`、每个分支的正强度 `v`，并修正突触公式。分支内仍是
-论文原始乘积，只改为 `exp(sum(log(gate)))` 进行数值稳定计算，数学结果不变。
+V2a 与其他分类实验共享数据、224×224 输入、卷积骨干、优化器和评价器。分类头
+包含论文突触参数 `w`、`theta`、正距离 `d` 以及分支强度 `v`。突触响应为
+`sigmoid((w*x-theta)/d)`；这与公式分母指数前的负号完全一致。分支乘积使用
+`exp(sum(log(gate)))`，只改变数值计算方式，不改变数学上的连乘。
 
 ```powershell
 D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_v2a\train.py
 ```
 
-默认使用 4 个分支、每分支 8 个输入，结果写入 `runs/controlled/dnm_v2a/`。
-其中 `metrics.csv` 保留全部训练/验证 loss，`comparison_metrics.csv` 保存统一
-P、R、mAP、时间和显存。
+默认读取 X-SDD 固定七分类划分，结果保存到
+`runs1/controlled/xsdd_dnm_v2a_cls/`。

@@ -1,4 +1,4 @@
-"""参数量与 DNM-V2 近似匹配的普通卷积消融入口。"""
+"""参数量与 DNM-V2 近似匹配的普通分类头消融入口。"""
 from __future__ import annotations
 
 import sys
@@ -15,6 +15,6 @@ from alfoil_dnm.train import main
 if __name__ == "__main__":
     main(
         default_variant="conv",
-        default_out=ROOT / "runs" / "controlled" / "conv_control",
+        default_out=ROOT / "runs1" / "controlled" / "xsdd_conv_control_cls",
         default_branch_features=8,
     )

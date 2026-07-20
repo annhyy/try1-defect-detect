@@ -1,62 +1,83 @@
-# 树突神经元铝材缺陷检测
+# X-SDD 表面缺陷分类：树突神经元与 YOLO 对比
 
-面向铝箔/铝材产线的轻量目标检测项目：以卷积骨干提取局部感受野，再由稳定树突模块完成局部非线性交互，输出缺陷位置、类别和置信度。
+当前主实验是 **X-SDD 七类钢材表面缺陷整图分类**，不是目标检测。模型接收整张
+图片，只输出一个类别，不读取文件名、XML 或 YOLO 检测框。
 
-真实训练数据为 **APSPC（Aluminum Profile Surface Detection Database）**：1,885 张铝型材图像、10 个类别、3,143 个 Pascal VOC XML 标注框。它不包含在 Git 仓库中：原始数据体积大、许可证信息未明确，需要从原始平台下载后本地转换。APSPC 可用于预训练与方法验证；最终部署前必须用铝箔产线图像对破洞、蚊虫等类别进行微调。
+七个类别为：`finishing roll printing`、`iron sheet ash`、
+`oxide scale of plate system`、`oxide scale of temperature system`、
+`red iron`、`slag inclusion`、`surface scratch`。
 
-## 快速开始
+## 1. 数据准备
 
-环境：Python 3.10+、PyTorch、PyYAML、Pillow、NumPy。使用本地 Anaconda 环境：
+原始数据放在 `datasets/X-SDD/datas/<类别>/`。首次准备执行：
 
 ```powershell
-D:\Anaconda_envs\envs\pytorch\python.exe -m pip install -r .\alfoil_dnm\requirements.txt
+D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo11\prepare_xsdd.py
 ```
 
-解压 APSPC 原始压缩包到 `datasets/APSPC1`、`datasets/APSPC2` 和 `datasets/APSPC-Annotations` 后：
+脚本保留原图，计算 SHA-256 并排除 9 张完全重复图，再以 seed 42 按类别划分
+70%/15%/15%。最终得到 1351 张：train 946、val 201、test 204，输出目录为
+`datasets/xsdd_yolo11_classification/`。所有模型读取这一份固定划分。
+
+## 2. 正式训练
+
+以下入口默认都是随机初始化、224×224、100 epoch、batch 64、GPU 0：
 
 ```powershell
-# XML (Pascal VOC) -> YOLO 标签；原始数据不会被修改
-D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\prepare_apspc.py
-
-# 等比例缩放为 640×640 letterbox 缓存（推荐，只需执行一次）
-D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\cache_letterbox.py
-
-# 机制消融：V1、论文乘积 V2a、几何平均 V2b、参数匹配普通卷积
-D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\train.py
-D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_v2a\train.py
-D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_v2b\train.py
-D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\conv_control\train.py
-
-# 外部基线：YOLO11、YOLO26，从零训练
+# YOLO11n-cls
 D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo11\train.py
+
+# YOLO26n-cls
 D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo26\train.py
 
-# 已完成的模型会被自动加入 Precision、Recall、mAP50、mAP50-95 对照图
-D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\plot_metrics.py
+# 旧版直接连乘 DNM
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\train.py
 
-# 推理
-# 将 --source 替换为待检测图片；下面以本地 APSPC 原始图片为例
-D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\infer.py --weights .\runs\controlled\dnm\best.pt --source .\datasets\APSPC1\img0.jpg --data .\datasets\apspc_yolo_letterbox640\data.yaml --out .\runs\controlled\dnm\prediction_img0.jpg
+# 论文公式 + log 域精确乘积
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_v2a\train.py
+
+# 论文公式 + log 域几何平均
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_v2b\train.py
+
+# 共享骨干、参数量近似匹配的普通神经网络分类头
+D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\conv_control\train.py
 ```
+
+只有显式加 `--pretrained` 时 YOLO 才加载 ImageNet 权重；该结果必须作为迁移学习
+参考单独报告，不能与随机初始化的树突模型混为结构对比。
+
+## 3. 结果目录与指标
+
+所有正式结果写入 `runs1/controlled/xsdd_*`。每个实验保存：
+
+- `comparison_metrics.csv`：逐 epoch 的 loss、验证 Accuracy、Macro-P/R/F1、时间、
+  显存和学习率；
+- `test_metrics.json`：固定测试集最终指标、参数量、权重大小和 CPU/GPU 推理延迟；
+- `confusion_matrix.csv`：七类混淆矩阵；
+- `test_predictions.csv`：逐图真值与预测；
+- `best.pt` 或 `weights/best.pt`：验证 Accuracy 最佳权重。
+
+训练全部结束后绘图：
+
+```powershell
+D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\plot_metrics.py
+```
+
+图保存到 `runs1/controlled/metrics_comparison.png` 和 `final_comparison.png`。
+
+详细说明见 [X-SDD 数据说明](documents/xsdd_dataset.md)、
+[统一对比协议](documents/comparison_protocol.md) 和
+[树突消融结构](documents/dnm_ablation_models.md)。NEU 和 APSPC 的旧说明仅作为历史记录，
+不属于当前 X-SDD 主实验。
 
 ## 项目结构
 
 ```text
-alfoil_dnm/       模型、VOC 转换、训练和推理代码
-alfoil_dnm_v2a/   论文参数补全、log 域精确乘积入口
-alfoil_dnm_v2b/   几何平均乘性树突入口
-comparisons/      参数匹配普通卷积与 YOLO 外部基线
-documents/        数据来源、类别和实验记录
-datasets/         本地数据集（已忽略，不上传 Git）
-runs/             训练权重和预测结果（已忽略，不上传 Git）
+classification/       分类共享加载器、模型、统一指标和旧 NEU 整理脚本
+alfoil_dnm*/           DNM-V1、V2a、V2b 训练入口
+comparisons/           普通网络、YOLO11/26、X-SDD 准备和绘图入口
+documents/             数据与实验说明
+datasets/              本地数据（Git 忽略）
+runs1/                 当前分类结果（Git 忽略）
+runs/                  旧检测结果（Git 忽略）
 ```
-
-详细的数据来源、类别映射、标注统计与实验规范见 [APSPC 数据说明](documents/apspc_dataset.md)。
-
-树突模型、YOLO11 和 YOLO26 的统一对比设置、评价指标和命令见[对比实验协议](documents/comparison_protocol.md)。
-
-V2a、V2b 与普通卷积的公式、参数匹配方式和消融边界见[DNM 消融模型说明](documents/dnm_ablation_models.md)。
-
-## Git 约定
-
-源码、文档和配置提交到仓库；真实数据集、权重、运行日志、IDE 缓存由 `.gitignore` 排除。每次真实实验完成后，在 `documents/apspc_dataset.md` 中记录数据版本、超参数、硬件、mAP、各类召回率和失败样例，再提交对应代码与记录。

@@ -1,111 +1,70 @@
-# 树突检测器、YOLO11 与 YOLO26：受控对比实验协议
+# X-SDD 七分类统一对比实验协议
 
 ## 目的
 
-本文件规定两层实验：内部机制消融包含 DNM-V1、DNM-V2a、DNM-V2b 和参数匹配普通卷积，它们共用骨干、检测头与损失；外部基线为 YOLO11n 和 YOLO26n。不同检测体系不能比较 loss 的绝对值，论文主比较指标统一为 Precision、Recall、mAP50 和 mAP50-95。
+比较 DNM-V1、DNM-V2a、DNM-V2b、参数匹配普通分类头、YOLO11n-cls 和
+YOLO26n-cls。任务是判断整张图属于哪一种表面缺陷，不预测缺陷框。
 
-## 共同控制变量
+正式结构对比的所有模型都从随机权重开始。YOLO 的 `--pretrained` 仅作为迁移学习
+参考，必须单独成表，不能把预训练收益解释为 YOLO 结构收益。
 
-三组受控实验均使用以下设置：
+## 固定控制变量
 
 | 项目 | 固定值 |
 |---|---|
-| 数据集 | `datasets/apspc_yolo_letterbox640/data.yaml` |
-| 数据划分 | 同一份 train / val / test（随机种子 42） |
-| 输入尺寸 | 640 × 640，等比例 Letterbox，不拉伸原图 |
-| 训练轮数 | 120 |
-| 批大小 | 8 |
-| 随机种子 | 42 |
-| 初始化 | 从零开始；不使用预训练权重 |
-| 数据增强 | 关闭（颜色、翻转、Mosaic、MixUp 等均关闭） |
-| 优化器 | AdamW，初始学习率 0.002，权重衰减 0.0001 |
-| 学习率策略 | 余弦衰减至 0，无 warmup |
+| 数据 | `datasets/xsdd_yolo11_classification` |
+| 划分 | train 946 / val 201 / test 204；seed=42；逐类分层；排除 9 张完全重复图 |
+| 输入 | 224×224 RGB；像素缩放到 0--1 |
+| epoch | 100 |
+| batch | 64 |
+| 优化器 | AdamW，lr=0.001，weight decay=0.0001 |
+| 调度 | 余弦衰减至 0，无 warmup |
 | AMP | 关闭 |
-| 梯度累积 | 不使用；`nbs=8` |
+| 轻量增强 | 90%--100% 随机裁取、水平/垂直翻转、轻量亮度/对比度 |
+| 模型选择 | 验证集 Top-1 Accuracy 最佳权重 |
+| 最终评价 | 固定 test 集只在训练完成后评估一次 |
 
-模型的网络规模、检测头设计和损失公式属于待比较的模型差异，不能强行设成一致。树突模型使用树突乘积聚合；YOLO 使用各自的标准检测头。
+X-SDD 绝大多数原图为 128×128，训练时放大到 224×224。原图没有新增信息，但统一
+尺寸使所有模型接口和计算量口径一致；验证和测试使用确定性 Resize + CenterCrop。
 
-## 运行命令
-
-在项目根目录执行。三条命令都默认使用上述受控设置；`--device 0` 可按需显式指定第一张 NVIDIA 显卡。
+## 正式运行命令
 
 ```powershell
-# 树突检测器
-D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\train.py
-
-# DNM-V2a：论文参数补全、log 域精确乘积
-D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_v2a\train.py
-
-# DNM-V2b：仅将精确乘积换成几何平均
-D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_v2b\train.py
-
-# 参数量匹配的普通卷积消融
-D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\conv_control\train.py
-
-# YOLO11n，从 yolo11n.yaml 随机初始化
 D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo11\train.py
-
-# YOLO26n，从 yolo26n.yaml 随机初始化
 D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo26\train.py
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\train.py
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_v2a\train.py
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_v2b\train.py
+D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\conv_control\train.py
 ```
 
-若加入 `--pretrained`，该实验变为迁移学习实验，必须与从零训练的三组结果分开报告，不能混在同一张主对比表中。
+所有入口默认随机初始化。若改动 img-size、batch、epoch、增强或随机种子，必须对全部
+模型做相同修改。YOLO 的 `--fraction` 仅供冒烟测试，正式实验必须为 1.0。
 
-## 统一输出与评价方法
+## 结果目录
 
-每个实验输出在 `runs/controlled/` 下：
-
-| 模型 | 目录 |
+| 模型 | 输出 |
 |---|---|
-| 树突检测器 | `runs/controlled/dnm/` |
-| DNM-V2a | `runs/controlled/dnm_v2a/` |
-| DNM-V2b | `runs/controlled/dnm_v2b/` |
-| 普通卷积对照 | `runs/controlled/conv_control/` |
-| YOLO11n | `runs/controlled/yolo11n/` |
-| YOLO26n | `runs/controlled/yolo26n/` |
+| DNM-V1 | `runs1/controlled/xsdd_dnm_v1_cls/` |
+| DNM-V2a | `runs1/controlled/xsdd_dnm_v2a_cls/` |
+| DNM-V2b | `runs1/controlled/xsdd_dnm_v2b_cls/` |
+| 普通头 | `runs1/controlled/xsdd_conv_control_cls/` |
+| YOLO11 | `runs1/controlled/xsdd_yolo11n_cls_scratch/` |
+| YOLO26 | `runs1/controlled/xsdd_yolo26n_cls_scratch/` |
 
-每组都必须保存：
+## 可以横向比较的指标
 
-- `comparison_metrics.csv`：统一字段 `epoch, precision, recall, map50, map50_95, epoch_seconds, elapsed_seconds, gpu_memory_mb, learning_rate`，用于横向曲线与表格。
-- `experiment_config.json`：实际数据路径、随机种子、优化器、增强、预训练状态、参数量等可复现实验配置。
-- `test_metrics.json`：以验证集 mAP50-95 最优权重在测试集上重新评价的最终指标。
-- 最优权重 `best.pt` 与最后一轮权重 `last.pt`。YOLO 的原生逐轮日志另保留为 `results.csv`；树突模型的原生逐轮损失保留为 `metrics.csv`。
+- Accuracy：全部测试图中分类正确比例；
+- Macro-Precision / Macro-Recall / Macro-F1：逐类等权平均，减少类别不均衡影响；
+- 参数量：可训练/总参数个数；
+- 推理速度：同一机器 batch=1、纯模型前向，分别报告 GPU/CPU median 和 p95；
+- 训练时间与峰值显存：训练成本的辅助指标。
 
-树突模型和 YOLO 都每轮计算以下统一指标：
+交叉熵 loss 可用于观察收敛，但不同结构的 loss 数值不能直接当成最终优劣。最终判断
+以独立 test 的 Accuracy、Macro-F1、参数量和同机推理速度为准。
 
-- `Precision`：预测框中正确框的比例。
-- `Recall`：真实缺陷框被检出的比例。
-- `mAP50`：IoU=0.50 下，10 个类别 AP 的平均值。
-- `mAP50-95`：IoU 从 0.50 到 0.95、步长 0.05 的 AP 平均值；这是最终主指标。
+## 可复现性边界
 
-树突评估器使用与 YOLO 相同的类别、边框、NMS 与 IoU 定义，并在 0.50:0.95 的十个阈值上计算 AP。由于两类模型的 loss 定义不同，`train_total`、`box_loss`、`cls_loss` 等只用于观察**本模型自身是否收敛**，不参与模型优劣比较。
-
-可以在三组训练完成后绘制统一指标曲线：
-
-```powershell
-D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\plot_metrics.py
-```
-
-图像输出为 `runs/controlled/metrics_comparison.png`，包含 Precision、Recall、mAP50 和 mAP50-95 四个子图，不绘制不可比的 loss。
-
-## 树突模型的特别说明
-
-APSPC 的训练图像约有 6,400 个 stride-8 网格位置，但平均每张图只有约 1.7 个缺陷框。旧版树突训练器的 objectness 正负样本权重过低，背景网格容易主导梯度，导致 objectness 和 mAP 长期偏低。
-
-当前训练器将 objectness 改为动态正负样本平衡的 focal BCE，并按 `mAP50-95` 而非验证 loss 保存 `best.pt`。这是检测任务的必要修正，因此旧版树突训练结果不能与新的受控 YOLO 实验直接对比，需按本协议重新训练。
-
-V2a 与 V2b 默认参数量均为 500,607；普通卷积对照为 500,486，差异约 0.024%。三者有意改变的是融合结构。V2a 使用与论文乘积等价的 `exp(sum(log(gate)))`，V2b 使用会改变函数尺度的 `exp(mean(log(gate)))`；二者胞体阈值按各自理论初始膜电位校准，避免仅因输出尺度不同造成初始偏置。公式和参数边界见 `documents/dnm_ablation_models.md`。
-
-## 旧的非受控运行
-
-`comparisons/yolo11/runs/apspc/` 若仍存在，属于此前 Ultralytics 默认训练实验：它可能包含默认增强、自动优化器或 AMP 等设置。该结果可作为参考，但**不能**列入本文件定义的严格受控主对比。新的受控结果只读取 `runs/controlled/`。
-
-## 每轮终端输出
-
-树突模型会打印自身的训练/验证损失，并在同一行打印统一指标和耗时，例如：
-
-```text
-epoch 012/120 train(total=..., obj=..., box=..., cls=...) val(total=..., obj=..., box=..., cls=...) P=... R=... mAP50=... mAP50-95=... time=... elapsed=...
-```
-
-YOLO 的 `box_loss`、`cls_loss`、`dfl_loss` 与树突模型的损失项没有一一对应关系；比较时只读取各自的 `comparison_metrics.csv`。
+X-SDD 测试集只有 204 张，一张图约等于 0.49 个百分点；YOLO11 当前只错 3 张，单次
+实验容易受随机种子影响。正式报告至少运行 seed 42、43、44，报告均值±标准差，不能
+只挑最高一次。测试集不能用于调参，模型结构和超参数选择只看 train/val。
