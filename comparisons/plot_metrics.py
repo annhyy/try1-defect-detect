@@ -58,7 +58,11 @@ def main() -> None:
         (run_root / "xsdd_dnm_v1_cls", "DNM-V1"),
         (run_root / "xsdd_dnm_v2a_cls", "DNM-V2a"),
         (run_root / "xsdd_dnm_v2b_cls", "DNM-V2b"),
+        (run_root / "xsdd_dnm_v2a_f4_cls", "DNM-V2a-F4"),
+        (run_root / "xsdd_dnm_v2b_f4_cls", "DNM-V2b-F4"),
+        (run_root / "xsdd_dnm_v1_tuned_cls", "DNM-V1-Tuned"),
         (run_root / "xsdd_conv_control_cls", "Conv control"),
+        (run_root / "xsdd_conv_control_weighted_cls", "Conv control weighted"),
         (run_root / "xsdd_yolo11n_cls_scratch", "YOLO11n-cls"),
         (run_root / "xsdd_yolo26n_cls_scratch", "YOLO26n-cls"),
     )

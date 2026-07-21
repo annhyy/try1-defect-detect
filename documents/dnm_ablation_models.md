@@ -53,6 +53,47 @@ V2a/V2b 其他部分相同，因此它们的差异直接检验连乘尺度是否
 使对比尽量不是“参数更多所以更准”。精确参数量会写入各实验的
 `experiment_config.json` 和 `test_metrics.json`，报告时应引用实际值。
 
+## 下一阶段独立版本
+
+新代码和新结果位于 `alfoil_dnm_next/`，不会覆盖上述历史实现或
+`runs1/controlled/xsdd_dnm_v1_cls` 等旧目录。
+
+### DNM-V2a-F4 与 DNM-V2b-F4
+
+这两个版本只把 `branch_features` 从 8 改为 4，其他突触公式、LayerNorm 后的输入
+sigmoid、正分支强度、胞体斜率/阈值和训练协议保持 V2 原样。V2a 仍为
+`exp(sum(log(gate)))`，V2b 仍为 `exp(mean(log(gate)))`。默认输出分别为
+`xsdd_dnm_v2a_f4_cls` 和 `xsdd_dnm_v2b_f4_cls`。因此它们可以直接回答“八项连乘是否是
+V2 失败的主要原因”，不能把后续训练策略变化归因到这个消融。
+
+### DNM-V1-Tuned
+
+V1-Tuned 默认使用 4 个分支、每分支 4 项：
+
+```text
+128 维卷积特征 -> 16 维（4 个分支各自 4 维） -> LayerNorm -> 分支内四项 log 乘积
+```
+
+每个分支获得不同的投影特征；LayerNorm 后不再接前置 sigmoid。输出是原始多分类 logits：
+
+```text
+L_c = sum_b v_cb * B_cb + bias_c
+```
+
+其中 `v_cb` 可以为正或负，`bias_c` 是独立类别偏置，不再使用正胞体斜率与耦合阈值。
+默认训练为 150 epoch、骨干/分类头学习率 `1e-3/3e-3`，余弦最低学习率为初始值的 1%。
+
+### 诊断与检查点
+
+三个新 DNM 入口每轮在终端打印验证集 `pred_count=[...]`，并把 train/val 数量写入
+`metrics.csv` 和 `comparison_metrics.csv`。每个输出目录保存 `best_accuracy.pt`、
+`best_macro_f1.pt`、兼容旧脚本的 `best.pt`（Accuracy 别名）以及 `last.pt`。最终测试默认
+只评估验证 Accuracy 选出的权重；Macro-F1 权重只依据验证集选择并单独保存。
+
+类别加权交叉熵通过 `--class-weighting balanced` 显式开启。为了保持第二组实验公平，
+`train_conv_control_weighted.py` 对普通卷积控制使用同一套类别权重，输出到
+`xsdd_conv_control_weighted_cls`，旧的 `xsdd_conv_control_cls` 不变。
+
 ## 输出与解释
 
 ```powershell
@@ -60,6 +101,11 @@ D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\train.py
 D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_v2a\train.py
 D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_v2b\train.py
 D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\conv_control\train.py
+
+# 新版独立入口
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_next\train_v2a_f4.py
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_next\train_v2b_f4.py
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_next\train_v1_tuned.py
 ```
 
 结果依次保存到 `runs1/controlled/xsdd_dnm_v1_cls`、`xsdd_dnm_v2a_cls`、
