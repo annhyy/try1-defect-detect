@@ -1,16 +1,20 @@
-# DNM-V1：X-SDD 七分类入口
+# DNM-V1 APSPC 目标检测器
 
-`train.py` 当前训练 X-SDD 七类整图分类。共享轻量卷积骨干先把 224×224 图像变成
-空间特征，经过全局平均池化后送入经典四层 DNM 分类头。V1 保留基础代码中的负号
-突触形式和直接乘积，作为历史基线。
+`train.py` 现在读取 APSPC 的 YOLO 框标注，训练现有单尺度 DNM 检测器。模型在
+stride-8 特征图上输出目标置信度、归一化边框和 10 类 logits。本轮只是把任务恢复为
+目标检测，没有加入“树突替换卷积”等新结构。
 
 ```powershell
 D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\train.py
 ```
 
-默认结果：`runs1/controlled/xsdd_dnm_v1_cls/`。逐轮保存交叉熵 loss、Accuracy、
-Macro-P/R/F1、时间和显存；训练结束保存固定测试集结果、混淆矩阵、逐图预测、
-参数量与 batch=1 CPU/GPU 前向延迟。
+默认数据为 `datasets/apspc_yolo_letterbox640/data.yaml`，输入 640x640，训练
+120 epoch、batch 8，结果写入 `run2/controlled/dnm_v1/`。最优检查点按验证集
+mAP50-95 选择；`metrics.csv` 保存 objectness/box/class loss 和检测指标，
+`test_metrics.json` 保存测试集 P/R/mAP 与逐类结果。
 
-本目录中的 `data.py`、`loss.py`、`metrics.py`、`infer.py` 等旧文件仍服务于早期
-APSPC 目标检测实验；新的分类训练入口不读取 APSPC 的 YAML 或框标签。
+推理示例：
+
+```powershell
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\infer.py --weights .\run2\controlled\dnm_v1\best.pt --source image.jpg --data .\datasets\apspc_yolo_letterbox640\data.yaml --out prediction.jpg
+```

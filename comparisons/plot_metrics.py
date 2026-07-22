@@ -1,4 +1,4 @@
-"""绘制 X-SDD 分类曲线与最终准确率、参数量、推理速度对比。"""
+"""绘制可横向比较的 APSPC 目标检测指标。"""
 from __future__ import annotations
 
 import argparse
@@ -8,30 +8,47 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+METRICS = (
+    ("precision", "Validation Precision"),
+    ("recall", "Validation Recall"),
+    ("map50", "Validation mAP@0.5"),
+    ("map50_95", "Validation mAP@0.5:0.95"),
+)
+SOURCES = (
+    ("dnm_v1", "DNM-V1"),
+    ("dnm_v2a", "DNM-V2a"),
+    ("dnm_v2b", "DNM-V2b"),
+    ("conv_control", "Conv-Control"),
+    ("yolo11n", "YOLO11n"),
+    ("yolo11s", "YOLO11s"),
+    ("yolo26n", "YOLO26n"),
+)
 
 
 def read_csv(path: Path) -> list[dict[str, str]]:
     with path.open("r", newline="", encoding="utf-8-sig") as file:
-        return [{key.strip(): value.strip() for key, value in row.items() if key} for row in csv.DictReader(file)]
+        return [
+            {key.strip(): value.strip() for key, value in row.items() if key}
+            for row in csv.DictReader(file)
+        ]
 
 
-def number(row: dict[str, str], name: str) -> float | None:
-    value = row.get(name, "")
+def number(row: dict[str, str], key: str) -> float | None:
+    value = row.get(key, "")
     return float(value) if value else None
 
 
-def curve_series(path: Path, name: str) -> dict:
+def curve(path: Path, name: str) -> dict:
     rows = read_csv(path)
-    keys = ("train_loss", "val_loss", "val_accuracy", "val_macro_f1")
     return {
         "name": name,
         "epoch": [number(row, "epoch") for row in rows],
-        **{key: [number(row, key) for row in rows] for key in keys},
+        **{key: [number(row, key) for row in rows] for key, _ in METRICS},
     }
 
 
-def plot_line(axis, items: list[dict], key: str, title: str, unit_interval: bool = False) -> None:
-    for item in items:
+def plot_line(axis, series: list[dict], key: str, title: str) -> None:
+    for item in series:
         points = [
             (epoch, value)
             for epoch, value in zip(item["epoch"], item[key])
@@ -42,81 +59,73 @@ def plot_line(axis, items: list[dict], key: str, title: str, unit_interval: bool
             axis.plot(epochs, values, linewidth=1.6, label=item["name"])
     axis.set_title(title)
     axis.set_xlabel("Epoch")
-    if unit_interval:
-        axis.set_ylim(0, 1.01)
+    axis.set_ylim(0, 1.01)
     axis.grid(alpha=0.25)
     if axis.lines:
         axis.legend(fontsize=8)
 
 
+def test_metric(summary: dict, key: str) -> float:
+    test = summary["test"]
+    aliases = {
+        "precision": ("precision", "metrics/precision(B)", "metrics/precision"),
+        "recall": ("recall", "metrics/recall(B)", "metrics/recall"),
+        "map50": ("map50", "metrics/mAP50(B)", "metrics/mAP50"),
+        "map50_95": ("map50_95", "metrics/mAP50-95(B)", "metrics/mAP50-95"),
+    }
+    for alias in aliases[key]:
+        if alias in test:
+            return float(test[alias])
+    raise KeyError(f"test_metrics.json 缺少 {key}，现有字段：{sorted(test)}")
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="绘制 DNM、普通分类头与 YOLO 的统一分类指标")
-    parser.add_argument("--root", default=str(ROOT / "runs1" / "controlled"))
+    parser = argparse.ArgumentParser(description="绘制 APSPC 目标检测统一指标")
+    parser.add_argument("--root", default=str(ROOT / "run2" / "controlled"))
     args = parser.parse_args()
-    run_root = Path(args.root)
-    sources = (
-        (run_root / "xsdd_dnm_v1_cls", "DNM-V1"),
-        (run_root / "xsdd_dnm_v2a_cls", "DNM-V2a"),
-        (run_root / "xsdd_dnm_v2b_cls", "DNM-V2b"),
-        (run_root / "xsdd_dnm_v2a_f4_cls", "DNM-V2a-F4"),
-        (run_root / "xsdd_dnm_v2b_f4_cls", "DNM-V2b-F4"),
-        (run_root / "xsdd_dnm_v1_tuned_cls", "DNM-V1-Tuned"),
-        (run_root / "xsdd_conv_control_cls", "Conv control"),
-        (run_root / "xsdd_conv_control_weighted_cls", "Conv control weighted"),
-        (run_root / "xsdd_yolo11n_cls_scratch", "YOLO11n-cls"),
-        (run_root / "xsdd_yolo26n_cls_scratch", "YOLO26n-cls"),
-    )
-    items = [
-        curve_series(folder / "comparison_metrics.csv", name)
-        for folder, name in sources
-        if (folder / "comparison_metrics.csv").exists()
+    run_root = Path(args.root).resolve()
+    available = [
+        (run_root / folder, name)
+        for folder, name in SOURCES
+        if (run_root / folder / "comparison_metrics.csv").exists()
     ]
-    if not items:
-        raise FileNotFoundError("runs1 中还没有 comparison_metrics.csv")
+    if not available:
+        raise FileNotFoundError(f"{run_root} 中没有 comparison_metrics.csv")
 
     import matplotlib.pyplot as plt
 
     run_root.mkdir(parents=True, exist_ok=True)
+    series = [curve(folder / "comparison_metrics.csv", name) for folder, name in available]
     figure, axes = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
-    plot_line(axes[0, 0], items, "val_accuracy", "Validation Accuracy", True)
-    plot_line(axes[0, 1], items, "val_macro_f1", "Validation Macro-F1", True)
-    plot_line(axes[1, 0], items, "train_loss", "Training Loss")
-    plot_line(axes[1, 1], items, "val_loss", "Validation Loss")
-    curve_output = run_root / "metrics_comparison.png"
-    figure.savefig(curve_output, dpi=180)
+    for axis, (key, title) in zip(axes.flat, METRICS):
+        plot_line(axis, series, key, title)
+    curve_path = run_root / "metrics_comparison.png"
+    figure.savefig(curve_path, dpi=180)
     plt.close(figure)
 
     summaries = []
-    for folder, name in sources:
+    for folder, name in available:
         path = folder / "test_metrics.json"
         if path.exists():
             summaries.append((name, json.loads(path.read_text(encoding="utf-8"))))
+    final_path = None
     if summaries:
         names = [name for name, _ in summaries]
-        accuracy = [item["test"]["accuracy"] for _, item in summaries]
-        macro_f1 = [item["test"]["macro_f1"] for _, item in summaries]
-        parameters = [item["parameters"] / 1e6 for _, item in summaries]
-        latency = []
-        for _, item in summaries:
-            speed = item.get("speed_batch1_forward", {})
-            selected = speed.get("gpu", speed.get("cpu", {}))
-            latency.append(selected.get("median_ms", 0.0))
-
-        final, bars = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
-        for axis, values, title in (
-            (bars[0, 0], accuracy, "Test Accuracy"),
-            (bars[0, 1], macro_f1, "Test Macro-F1"),
-            (bars[1, 0], parameters, "Parameters (M)"),
-            (bars[1, 1], latency, "Batch-1 Forward Latency (ms)"),
-        ):
+        final, axes = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
+        for axis, (key, title) in zip(axes.flat, METRICS):
+            values = [test_metric(summary, key) for _, summary in summaries]
             axis.bar(names, values)
-            axis.set_title(title)
+            axis.set_title(title.replace("Validation", "Test"))
+            axis.set_ylim(0, 1.01)
             axis.tick_params(axis="x", rotation=25)
             axis.grid(axis="y", alpha=0.2)
-        final.savefig(run_root / "final_comparison.png", dpi=180)
+        final_path = run_root / "final_detection_comparison.png"
+        final.savefig(final_path, dpi=180)
         plt.close(final)
 
-    print(f"已生成分类训练曲线：{curve_output.resolve()}")
+    print(f"检测训练曲线：{curve_path}")
+    if final_path:
+        print(f"测试集检测指标：{final_path}")
 
 
 if __name__ == "__main__":

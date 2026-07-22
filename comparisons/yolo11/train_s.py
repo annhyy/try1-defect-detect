@@ -1,4 +1,4 @@
-"""YOLO11n 的 APSPC 目标检测对照入口。"""
+"""参数量更大的 YOLO11s APSPC 目标检测对照入口。"""
 from __future__ import annotations
 
 import sys
@@ -12,4 +12,4 @@ from detection.yolo_train import main
 
 
 if __name__ == "__main__":
-    main(default_scale="n", default_out_name="yolo11n")
+    main(default_scale="s", default_out_name="yolo11s")

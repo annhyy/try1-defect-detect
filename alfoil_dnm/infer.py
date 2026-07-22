@@ -35,6 +35,31 @@ def nms(boxes, scores, threshold=0.45):
     return torch.stack(keep)
 
 
+def letterbox_image(image: Image.Image, size: int):
+    """将原图等比例缩放并填充到正方形，返回缩放比例和左上填充值。"""
+    source_width, source_height = image.size
+    scale = min(size / source_width, size / source_height)
+    resized_width = round(source_width * scale)
+    resized_height = round(source_height * scale)
+    pad_x = (size - resized_width) // 2
+    pad_y = (size - resized_height) // 2
+    resized = image.resize((resized_width, resized_height), Image.Resampling.LANCZOS)
+    canvas = Image.new("RGB", (size, size), (114, 114, 114))
+    canvas.paste(resized, (pad_x, pad_y))
+    return canvas, scale, pad_x, pad_y
+
+
+def restore_box(box, scale: float, pad_x: int, pad_y: int, width: int, height: int):
+    """把 640 letterbox 坐标去除填充并映射回原图像素坐标。"""
+    x1, y1, x2, y2 = box
+    return [
+        max(0.0, min(width, (x1 - pad_x) / scale)),
+        max(0.0, min(height, (y1 - pad_y) / scale)),
+        max(0.0, min(width, (x2 - pad_x) / scale)),
+        max(0.0, min(height, (y2 - pad_y) / scale)),
+    ]
+
+
 @torch.no_grad()
 def main():
     parser = argparse.ArgumentParser()
@@ -53,17 +78,25 @@ def main():
     original = Image.open(args.source).convert("RGB")
     w, h = original.size
     size = ckpt["img_size"]
-    # 推理尺寸必须与训练保存的 img_size 一致；随后再映射回原图坐标。
-    resized = original.resize((size, size))
+    # 推理预处理必须与训练缓存一致：等比例缩放、灰边填充，不拉伸缺陷形状。
+    resized, scale, pad_x, pad_y = letterbox_image(original, size)
     image = torch.from_numpy(np.asarray(resized, dtype=np.float32).transpose(2, 0, 1)).div(255).unsqueeze(0)
     out = model(image)[0]; obj = out[0].sigmoid(); boxes = out[1:5].sigmoid(); classes = out[5:].sigmoid()
     candidates = []
+    grid_height, grid_width = obj.shape
     for y, x in (obj > args.conf).nonzero().tolist():
         score, category = (obj[y, x] * classes[:, y, x]).max(dim=0)
-        # 中心点先从特征图坐标还原到输入尺寸，再按原图宽高缩放。
+        # 先还原到 letterbox 输入像素，再去除填充并映射回原图。
         cx, cy, bw, bh = boxes[:, y, x]
-        gx, gy = x + cx, y + cy
-        candidates.append(([float((gx * 8 / size - bw / 2) * w), float((gy * 8 / size - bh / 2) * h), float((gx * 8 / size + bw / 2) * w), float((gy * 8 / size + bh / 2) * h)], float(score), int(category)))
+        center_x = float((x + cx) / grid_width * size)
+        center_y = float((y + cy) / grid_height * size)
+        box_width = float(bw * size)
+        box_height = float(bh * size)
+        input_box = [
+            center_x - box_width / 2, center_y - box_height / 2,
+            center_x + box_width / 2, center_y + box_height / 2,
+        ]
+        candidates.append((restore_box(input_box, scale, pad_x, pad_y, w, h), float(score), int(category)))
     draw = ImageDraw.Draw(original)
     for category in range(len(names)):
         class_candidates = [item for item in candidates if item[2] == category]

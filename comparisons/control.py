@@ -1,10 +1,86 @@
-"""表面缺陷分类对照协议与 Ultralytics 日志标准化工具。"""
+"""检测与分类实验共用的训练选项和日志标准化工具。"""
 from __future__ import annotations
 
 import csv
 import json
 from pathlib import Path
 from typing import Any
+
+
+DETECTION_COMPARISON_COLUMNS = (
+    "epoch", "precision", "recall", "map50", "map50_95",
+    "epoch_seconds", "elapsed_seconds", "gpu_memory_mb", "learning_rate",
+)
+
+
+def controlled_yolo_options(epochs: int, batch_size: int = 8) -> dict[str, Any]:
+    """返回所有 YOLO 基线共用的 APSPC 检测协议。"""
+    return {
+        "optimizer": "AdamW",
+        "lr0": 2e-3,
+        "lrf": 0.0,
+        "cos_lr": True,
+        "weight_decay": 1e-4,
+        "warmup_epochs": 0.0,
+        "nbs": batch_size,
+        "workers": 2,
+        "amp": False,
+        "deterministic": True,
+        "patience": epochs,
+        "hsv_h": 0.0,
+        "hsv_s": 0.0,
+        "hsv_v": 0.0,
+        "degrees": 0.0,
+        "translate": 0.0,
+        "scale": 0.0,
+        "shear": 0.0,
+        "perspective": 0.0,
+        "flipud": 0.0,
+        "fliplr": 0.0,
+        "mosaic": 0.0,
+        "close_mosaic": 0,
+        "mixup": 0.0,
+        "cutmix": 0.0,
+        "copy_paste": 0.0,
+        "erasing": 0.0,
+    }
+
+
+def standardize_yolo_metrics(
+    results_csv: Path,
+    output_csv: Path,
+    gpu_memory_mb_by_epoch: dict[int, float] | None = None,
+) -> None:
+    """把 Ultralytics 检测日志转换为统一的逐轮指标列。"""
+    with results_csv.open("r", newline="", encoding="utf-8-sig") as file:
+        rows = [
+            {key.strip(): value.strip() for key, value in row.items() if key}
+            for row in csv.DictReader(file)
+        ]
+    raw_epochs = [int(float(row["epoch"])) for row in rows if row.get("epoch", "")]
+    epoch_offset = 1 if raw_epochs and raw_epochs[0] == 0 else 0
+    previous_elapsed = 0.0
+    with output_csv.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(DETECTION_COMPARISON_COLUMNS)
+        for row in rows:
+            elapsed_text = _number(row, "time")
+            elapsed = float(elapsed_text) if elapsed_text != "" else previous_elapsed
+            epoch_seconds = elapsed - previous_elapsed
+            previous_elapsed = elapsed
+            raw_epoch = _number(row, "epoch")
+            epoch = int(raw_epoch) + epoch_offset if raw_epoch != "" else ""
+            writer.writerow((
+                epoch,
+                _number(row, "metrics/precision(B)", "metrics/precision"),
+                _number(row, "metrics/recall(B)", "metrics/recall"),
+                _number(row, "metrics/mAP50(B)", "metrics/mAP50"),
+                _number(row, "metrics/mAP50-95(B)", "metrics/mAP50-95"),
+                epoch_seconds,
+                elapsed,
+                (gpu_memory_mb_by_epoch or {}).get(epoch, ""),
+                _number(row, "lr/pg0"),
+            ))
 
 
 COMPARISON_COLUMNS = (

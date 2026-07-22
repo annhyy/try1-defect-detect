@@ -1,75 +1,83 @@
-# X-SDD 七分类统一对比实验协议
+# APSPC 目标检测统一对比协议
 
-## 目的
+## 任务
 
-比较 DNM-V1、DNM-V2a、DNM-V2b、参数匹配普通分类头、YOLO11n-cls 和
-YOLO26n-cls。任务是判断整张图属于哪一种表面缺陷，不预测缺陷框。
+当前任务是 10 类目标检测：模型必须同时输出缺陷位置、类别和置信度。整图
+Accuracy、Macro-F1 等分类指标不再作为主结果。旧 X-SDD 分类代码和 `runs1/`
+结果只作历史记录。
 
-正式结构对比的所有模型都从随机权重开始。YOLO 的 `--pretrained` 仅作为迁移学习
-参考，必须单独成表，不能把预训练收益解释为 YOLO 结构收益。
+内部机制对比包括 DNM-V1、DNM-V2a、DNM-V2b 和参数匹配普通卷积；外部基线为
+YOLO11n、YOLO11s 和可选的 YOLO26n。YOLO11s 是本轮新增的大参数对照，参数量约
+9.4M，YOLO11n 约 2.6M。
 
-本页下方的 100 epoch、统一 `1e-3` 学习率协议对应 V1/V2a/V2b/Conv-Control/YOLO
-历史基线。`alfoil_dnm_next` 中的 V2a-F4/V2b-F4 继续遵守该协议；V1-Tuned 是明确
-标记的第二阶段结构与训练联合版本，采用 150 epoch、骨干/分类头 `1e-3/3e-3` 和
-1% 最低学习率，不能把它与 F4 的差异解释成单一结构消融。
-
-## 固定控制变量
+## 数据和尺寸
 
 | 项目 | 固定值 |
 |---|---|
-| 数据 | `datasets/xsdd_yolo11_classification` |
-| 划分 | train 946 / val 201 / test 204；seed=42；逐类分层；排除 9 张完全重复图 |
-| 输入 | 224×224 RGB；像素缩放到 0--1 |
-| epoch | 100 |
-| batch | 64 |
-| 优化器 | AdamW，lr=0.001，weight decay=0.0001 |
-| 调度 | 余弦衰减至 0，无 warmup |
+| 数据 | `datasets/apspc_yolo_letterbox640/data.yaml` |
+| 划分 | train 1320 / val 376 / test 189，seed 42 |
+| 类别 | 10 类 |
+| 输入 | 640x640，等比例 letterbox，不拉伸 |
+| 原始图像 | 通常 2560x1920 |
+
+640 缓存中的图片和框已经一起变换。将它再次放大到 960 只会插值，不会恢复细节，
+代码会拒绝这种组合。若以后测试 960，YOLO 必须改读
+`datasets/apspc_yolo/data.yaml`，从原图只缩放一次；960 是独立实验，不能与 640
+结果混成同一组消融。
+
+## 默认训练设置
+
+| 项目 | 默认值 |
+|---|---|
+| epochs | 120 |
+| batch | 8；GTX 1060 跑 YOLO11s 可降为 4 |
+| seed | 42 |
+| 初始化 | 随机初始化 |
+| 优化器 | AdamW，lr 0.002，weight decay 0.0001 |
+| 调度 | 余弦衰减到 0，无 warmup |
+| 数据增强 | 关闭，保持旧受控协议 |
 | AMP | 关闭 |
-| 轻量增强 | 90%--100% 随机裁取、水平/垂直翻转、轻量亮度/对比度 |
-| 模型选择 | 验证集 Top-1 Accuracy 最佳权重 |
-| 最终评价 | 固定 test 集只在训练完成后评估一次 |
+| 最优权重 | 验证集 mAP50-95 最高 |
+| 最终测试 | 训练结束后用 best 权重评估 test 一次 |
 
-X-SDD 绝大多数原图为 128×128，训练时放大到 224×224。原图没有新增信息，但统一
-尺寸使所有模型接口和计算量口径一致；验证和测试使用确定性 Resize + CenterCrop。
+`--pretrained` 是单独的 COCO 迁移学习实验，不能与随机初始化的 DNM 直接解释为
+结构优劣。若 YOLO11s 因显存改为 batch 4，严格比较 YOLO11n/YOLO11s 时也应把
+YOLO11n 改成 batch 4 后重跑。
 
-## 正式运行命令
+## 命令
 
 ```powershell
-D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo11\train.py
-D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo26\train.py
 D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\train.py
 D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_v2a\train.py
 D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_v2b\train.py
 D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\conv_control\train.py
+D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo11\train.py
+D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo11\train_s.py
+D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo26\train.py
 ```
 
-所有入口默认随机初始化。若改动 img-size、batch、epoch、增强或随机种子，必须对全部
-模型做相同修改。YOLO 的 `--fraction` 仅供冒烟测试，正式实验必须为 1.0。
+## 保存内容
 
-## 结果目录
+所有新检测运行放在 `run2/controlled/`，不覆盖 `runs/` 和 `runs1/` 的旧结果。
 
-| 模型 | 输出 |
-|---|---|
-| DNM-V1 | `runs1/controlled/xsdd_dnm_v1_cls/` |
-| DNM-V2a | `runs1/controlled/xsdd_dnm_v2a_cls/` |
-| DNM-V2b | `runs1/controlled/xsdd_dnm_v2b_cls/` |
-| 普通头 | `runs1/controlled/xsdd_conv_control_cls/` |
-| YOLO11 | `runs1/controlled/xsdd_yolo11n_cls_scratch/` |
-| YOLO26 | `runs1/controlled/xsdd_yolo26n_cls_scratch/` |
+- DNM 的 `metrics.csv`：train/val total、objectness、box、class loss，以及 P/R/mAP。
+- YOLO 的 `results.csv`：train/val box、class、DFL loss，以及 P/R/mAP。
+- `comparison_metrics.csv`：统一的 epoch、Precision、Recall、mAP50、mAP50-95、
+  每轮时间、累计时间、峰值显存和学习率。
+- `experiment_config.json`：完整参数、数据路径、初始化方式和参数量。
+- `test_metrics.json`：验证 mAP50-95 最优权重在固定测试集上的结果。
+- `best.pt`、`last.pt` 或 YOLO 的 `weights/` 权重。
 
-## 可以横向比较的指标
+不同检测器的损失定义不同。DNM 的 objectness/box loss 和 YOLO 的 box/DFL loss
+只能用于判断各自是否收敛，不能比较绝对值。模型优劣以同一测试集的 Precision、
+Recall、mAP50、mAP50-95、参数量和同机速度为主。
 
-- Accuracy：全部测试图中分类正确比例；
-- Macro-Precision / Macro-Recall / Macro-F1：逐类等权平均，减少类别不均衡影响；
-- 参数量：可训练/总参数个数；
-- 推理速度：同一机器 batch=1、纯模型前向，分别报告 GPU/CPU median 和 p95；
-- 训练时间与峰值显存：训练成本的辅助指标。
+## 绘图
 
-交叉熵 loss 可用于观察收敛，但不同结构的 loss 数值不能直接当成最终优劣。最终判断
-以独立 test 的 Accuracy、Macro-F1、参数量和同机推理速度为准。
+```powershell
+D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\plot_metrics.py
+```
 
-## 可复现性边界
-
-X-SDD 测试集只有 204 张，一张图约等于 0.49 个百分点；YOLO11 当前只错 3 张，单次
-实验容易受随机种子影响。正式报告至少运行 seed 42、43、44，报告均值±标准差，不能
-只挑最高一次。测试集不能用于调参，模型结构和超参数选择只看 train/val。
+输出 `run2/controlled/metrics_comparison.png` 和
+`run2/controlled/final_detection_comparison.png`。图中只混合可比较的框级指标，
+不把不同模型的 loss 画成同一尺度。
