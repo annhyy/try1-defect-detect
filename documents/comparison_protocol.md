@@ -6,9 +6,10 @@
 Accuracy、Macro-F1 等分类指标不再作为主结果。旧 X-SDD 分类代码和 `runs1/`
 结果只作历史记录。
 
-内部机制对比包括 DNM-V1、DNM-V2a、DNM-V2b 和参数匹配普通卷积；外部基线为
-YOLO11n、YOLO11s 和可选的 YOLO26n。YOLO11s 是本轮新增的大参数对照，参数量约
-9.4M，YOLO11n 约 2.6M。
+内部机制对比包括 DNM-V1、DNM-V2a、DNM-V2b、参数匹配普通卷积，以及只在骨干
+最后一个 stride=1 卷积中加入通道二次积分的 Dit-CNN；外部基线为 YOLO11n、
+YOLO11s 和可选的 YOLO26n。YOLO11s 是本轮新增的大参数对照，参数量约 9.4M，
+YOLO11n 约 2.6M。
 
 ## 数据和尺寸
 
@@ -51,6 +52,7 @@ D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm\train.py
 D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_v2a\train.py
 D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_v2b\train.py
 D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\conv_control\train.py
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dit_cnn\train.py
 D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo11\train.py
 D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo11\train_s.py
 D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo26\train.py
@@ -60,7 +62,8 @@ D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo26\train.py
 
 所有新检测运行放在 `run2/controlled/`，不覆盖 `runs/` 和 `runs1/` 的旧结果。
 
-- DNM 的 `metrics.csv`：train/val total、objectness、box、class loss，以及 P/R/mAP。
+- DNM 和 Dit-CNN 的 `metrics.csv`：train/val total、objectness、box、class loss，
+  以及 P/R/mAP。
 - YOLO 的 `results.csv`：train/val box、class、DFL loss，以及 P/R/mAP。
 - `comparison_metrics.csv`：统一的 epoch、Precision、Recall、mAP50、mAP50-95、
   每轮时间、累计时间、峰值显存和学习率。

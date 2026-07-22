@@ -19,6 +19,7 @@ SOURCES = (
     ("dnm_v2a", "DNM-V2a"),
     ("dnm_v2b", "DNM-V2b"),
     ("conv_control", "Conv-Control"),
+    ("dit_cnn", "Dit-CNN"),
     ("yolo11n", "YOLO11n"),
     ("yolo11s", "YOLO11s"),
     ("yolo26n", "YOLO26n"),

@@ -25,6 +25,9 @@ D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_v2a\train.py
 D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dnm_v2b\train.py
 D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\conv_control\train.py
 
+# Dit-CNN 通道二次积分检测器
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dit_cnn\train.py
+
 # YOLO 目标检测对照
 D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo11\train.py
 D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo11\train_s.py
@@ -62,7 +65,8 @@ P/R/mAP，不把不同 loss 的绝对值混在一起。
 
 详细说明见 [APSPC 数据说明](documents/apspc_dataset.md)、
 [检测对比协议](documents/comparison_protocol.md) 和
-[DNM 检测结构](documents/dnm_ablation_models.md)。
+[DNM 检测结构](documents/dnm_ablation_models.md)。Dit-CNN 的结构、论文对应关系和
+训练方法见 [Dit-CNN 独立说明](alfoil_dit_cnn/README.md)。
 
 ## Git 范围
 
