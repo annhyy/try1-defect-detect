@@ -28,6 +28,11 @@ D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\conv_control\train.py
 # Dit-CNN 通道二次积分检测器
 D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dit_cnn\train.py
 
+# 用 2x2 空间树突运算替换一个或两个普通卷积
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dendritic_conv\train.py --variant conv
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dendritic_conv\train.py
+D:\Anaconda_envs\envs\pytorch\python.exe .\alfoil_dendritic_conv\train.py --replace-layers 2 --batch-size 4
+
 # YOLO 目标检测对照
 D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo11\train.py
 D:\Anaconda_envs\envs\pytorch\python.exe .\comparisons\yolo11\train_s.py
@@ -66,7 +71,8 @@ P/R/mAP，不把不同 loss 的绝对值混在一起。
 详细说明见 [APSPC 数据说明](documents/apspc_dataset.md)、
 [检测对比协议](documents/comparison_protocol.md) 和
 [DNM 检测结构](documents/dnm_ablation_models.md)。Dit-CNN 的结构、论文对应关系和
-训练方法见 [Dit-CNN 独立说明](alfoil_dit_cnn/README.md)。
+训练方法见 [Dit-CNN 独立说明](alfoil_dit_cnn/README.md)；直接替换空间卷积的
+实验见 [空间树突卷积说明](alfoil_dendritic_conv/README.md)。
 
 ## Git 范围
 
